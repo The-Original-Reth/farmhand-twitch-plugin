@@ -52,6 +52,24 @@ class Buffer:
             self._filler = proc
             self._cond.notify_all()
 
+    def refill(self, proc) -> bool:
+        """After a stall has used the delay up while live (the self-check started the picture again): the delay is
+        collected afresh, as when going live after a restart, with `proc`'s stream (the holding screen) going to the
+        sender meanwhile. Without this, once used up the delay stayed used up for the rest of the time live, and the
+        next hiccup went straight to YouTube. False (and `proc` ended) when it's already filling, or ended."""
+        with self._cond:
+            if not self._started or self._ended:
+                ok = False
+            else:
+                self._started = False
+                self._first = time.monotonic()
+                self._filler = proc
+                self._cond.notify_all()
+                ok = True
+        if not ok:
+            _stop(proc)
+        return ok
+
     def filled_from(self):
         """The holding screen's ffmpeg while it's going out, else None."""
         with self._cond:

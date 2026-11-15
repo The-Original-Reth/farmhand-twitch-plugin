@@ -56,3 +56,9 @@ class SelfCheckMixin:
             for proc in (warming, picture, sender):
                 procs.end(proc)  # (each is started again by its own loop)
             tried_picture = True
+            # the stall used the delay up: it's collected afresh behind the holding screen (else it stayed used up)
+            if self._refill(gen):
+                with self._lock:
+                    if self._current(gen) and self._healed:
+                        self._healed["message"] = self._healed["message"].rstrip(".") + (
+                            "; the holding screen is on YouTube while the delay fills again.")

@@ -33,6 +33,9 @@ What it adds over the Stream page older Farmhands had built in:
   same YouTube broadcast: a restart leaves the broadcast live, and only Stop ends it.
   While its delay fills again, YouTube is shown a **holding screen** (its words, picture, colours and font are set on the
   Stream page), so the broadcast keeps getting video; then it switches to the cameras with the whole delay in place.
+- **It mends itself.** When next to nothing reaches YouTube for a minute, it starts the picture again (and, if that
+  doesn't help, the connection to YouTube). A stall that long has used the delay up, so the holding screen goes out
+  again for about a minute while the delay fills, and later hiccups are hidden again.
 - **Farmhand going down doesn't stop it.** The cameras are read at the addresses last heard of, and the words under
   them become just the printers' names until Farmhand is back.
 - **It reads only what it needs**: the cameras' addresses (`cameras:read`) and what each printer is printing

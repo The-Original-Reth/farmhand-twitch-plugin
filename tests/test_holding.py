@@ -75,6 +75,49 @@ def test_the_buffer_gives_the_holding_screen_until_the_delay_is_held_then_whats_
     buffer.close()
 
 
+def test_a_used_up_delay_is_collected_again_behind_the_holding_screen():
+    """A stall used the delay up while live (on CT 108 it then stayed at 0 s held for the rest of the time live): refill
+    gives the sender the holding screen again until the delay is held afresh, then what's held from its start."""
+    from streamer.live_stream import buffer as relay
+
+    from .fake_ffmpeg import HOLDING_FRAME, _Holding, _Sink
+
+    buffer, sink = relay.Buffer(0.4), _Sink()
+    buffer.set_sink(sink)
+    buffer.write(b"\x47" + b"A" * 187)
+    assert wait_until(lambda: b"A" * 187 in bytes(sink.written), timeout=3) and not buffer.filling()
+    hold = _Holding()
+    assert buffer.refill(hold)
+    assert buffer.filling() and buffer.filled_from() is hold
+    assert not buffer.refill(_Holding())  # (filling already: a second one is ended, nothing changes)
+    buffer.write(b"\x47" + b"B" * 187)
+    assert wait_until(lambda: HOLDING_FRAME in bytes(sink.written), timeout=1)
+    assert wait_until(lambda: b"B" * 187 in bytes(sink.written), timeout=3)
+    assert hold.poll() is not None and buffer.filled_from() is None and not buffer.filling()
+    sent = bytes(sink.written)
+    assert sent.index(b"A" * 187) < sent.index(HOLDING_FRAME) < sent.index(b"B" * 187)
+    buffer.close()
+
+
+def test_the_self_check_fills_a_used_up_delay_again(api, ffmpeg, farmhand, plugin):
+    from streamer.live_stream import stream
+
+    grid(api, [{"camera": "1:Bed"}, None])
+    api.put("/api/stream", json={"delay": 1})
+    stream.go_live(store.store(), store.session_factory)
+    stream._buffer.write(b"G" + bytes(187))
+    assert wait_until(lambda: not stream._buffer.filling(), timeout=5)
+    assert wait_until(lambda: stream._buffer.held() == 0, timeout=3)  # (used up: the sender took it all)
+    assert stream._refill(stream._generation)
+    assert wait_until(lambda: len(ffmpeg.holdings) == 1)
+    assert api.get("/api/stream").json()["status"]["holding"] is True
+    assert not stream._refill(stream._generation)  # (filling already)
+    stream._buffer.write(b"G" + bytes(187))
+    assert wait_until(lambda: ffmpeg.holding_procs[0].poll() is not None, timeout=5)  # the delay held again: ended
+    assert api.get("/api/stream").json()["status"]["holding"] is False
+    stream.stop()
+
+
 def test_a_holding_screen_stuck_writing_is_still_ended(monkeypatch):
     """Once the delay is held nothing reads the holding screen's ffmpeg any more, so it's stuck writing to a full pipe,
     where terminate() never reaches it (on CT 108 one ran on for 19 minutes, still fed the music). Its stdout is closed,

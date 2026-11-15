@@ -309,15 +309,41 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
     def _hold(self, db: Store, chosen: dict, ffmpeg: str, buffer: Buffer, player) -> None:
         """After the plugin's own restart: the holding screen to YouTube straight away, while the delay fills again
         behind it (holding.py). Best tried: without it the stream still goes live, as from Go live."""
+        proc = self._holding(db, chosen, ffmpeg, player)
+        if proc is not None:
+            buffer.fill_from(proc)
+
+    def _holding(self, db: Store, chosen: dict, ffmpeg: str, player):
+        """The holding screen's ffmpeg started, with the music fed to it (None when it couldn't be)."""
         with self._lock:
             folder = self._cache
         proc = holding.start(db, chosen, ffmpeg, folder)
         if proc is None:
-            return
+            return None
         threading.Thread(target=self._listen, args=(proc,), name="stream-holding-listen", daemon=True).start()
         if player:
             player.attach(proc.stdin)
-        buffer.fill_from(proc)
+        return proc
+
+    def _refill(self, gen: int) -> bool:
+        """The self-check started the picture again after a stall that used the delay up (less than half of it held):
+        the holding screen goes to YouTube while the delay is collected afresh behind it, so the next hiccup is hidden
+        again. True when it is; False (nothing changed) when the delay wasn't used up, or the holding screen couldn't
+        be shown."""
+        with self._lock:
+            if not self._current(gen):
+                return False
+            buffer, player, resolution = self._buffer, self._player, self._resolution
+        if buffer is None or buffer.delay <= 0 or buffer.filling() or buffer.held() >= buffer.delay / 2:
+            return False
+        ffmpeg = procs.ffmpeg_path()
+        if not ffmpeg:
+            return False
+        db = store()
+        chosen = settings(db)
+        chosen["resolution"] = resolution or chosen["resolution"]  # (this time live's size, as the picture's)
+        proc = self._holding(db, chosen, ffmpeg, player)
+        return proc is not None and buffer.refill(proc)
 
     def stop(self, forget: bool = True, end_broadcast: bool = True) -> dict:
         """Stop the stream. `forget`: Stop pressed (it won't go live again after a restart); False when the plugin is
