@@ -3,6 +3,7 @@ import { c } from "../theme.js";
 import { cancelButton, primaryButton, uiText } from "../styles.js";
 import { errorText, getStream, renameSlideshow, saveStream, scanStreamFolder, startStream, stopStream } from "../api.js";
 import { useData } from "../data.jsx";
+import { usePhone } from "../lib/usePhone.js";
 import { usePrintProgress, usePrinterCameras } from "../monitor/cameras.js";
 import { StreamPreview } from "./StreamPreview.jsx";
 import { cameraOf, followCameras, printerOf } from "./shapes.js";
@@ -32,6 +33,7 @@ const mutedAtFirst = () => {
 // (the plugin: `aside(page)`, what the plugin adds under the live panel: the cameras live or down, Farmhand's state)
 export function StreamSection({ layouts = [], onSaveLayouts, onSlideshowRenamed, aside }) {
   const { printers } = useData();
+  const phone = usePhone();
   const active = printers.filter((p) => !p.decommissioned);
   const music = useRef(null); // the music panel's own start and stop, for the switch (MusicPanel `control`)
   const [resynced, setResynced] = useState(false); // Resync pressed since the last change: the preview keeps the server's time, changes or not
@@ -238,9 +240,10 @@ export function StreamSection({ layouts = [], onSaveLayouts, onSlideshowRenamed,
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
     {head}
-    <div data-testid="stream-section" style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(340px, 2fr)", gap: 20, alignItems: "start" }}>
-      {/* left: what the stream looks like; right: going live and what goes into it */}
-      <div style={{ minWidth: 0, position: "sticky", top: 0 }}>
+    <div data-testid="stream-section" style={{ display: "grid", gridTemplateColumns: phone ? "minmax(0, 1fr)" : "minmax(0, 3fr) minmax(340px, 2fr)", gap: phone ? 16 : 20, alignItems: "start" }}>
+      {/* left: what the stream looks like; right: going live and what goes into it. On a phone, one under the other,
+          and the preview scrolls away with the page rather than staying over the panels */}
+      <div style={{ minWidth: 0, ...(!phone && { position: "sticky", top: 0 }) }}>
         <StreamPreview
           shown={shown} change={change} squares={squares} showStatus={shown.showStatus} live={status.live} liveResolution={status.resolution} resolutions={page.resolutions}
           cameras={cameras} media={page.media} fonts={page.fonts} label={label}
