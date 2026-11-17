@@ -185,7 +185,7 @@ export function StreamPreview({ shown, change, squares, showStatus, live, liveRe
       )}
       <div style={uiText(11, c.textFaint, { marginTop: 6, lineHeight: 1.5 })}>
         {clock !== null && serverClock.live
-          ? "In step with the stream: the same slideshow pictures and turns as the picture the server is sending (YouTube shows it a few seconds later)."
+          ? "In step with the stream: the same slideshow pictures and turns as the picture the server is sending (Twitch shows it a few seconds later)."
           : clock !== null
             ? "In step with the server: going live, the stream starts on the slideshow pictures and turn shown here."
           : "Played in this browser, so you can check it before going live. What goes out is made on the server and may lag a few seconds behind."}

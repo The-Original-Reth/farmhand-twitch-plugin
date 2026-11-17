@@ -1,6 +1,6 @@
 r"""
 Where the plugin saves: a save location on the NAS (\\server\share\folder and its login) that the plugin mounts itself,
-with the stream folder and the YouTube clips folder inside it, each changeable; and the container's own folders until
+with the stream folder and the Twitch clips folder inside it, each changeable; and the container's own folders until
 one is set (save_location.py, save_location_routes.py). `mount` is a stand-in: the "share" is a folder of the test's.
 """
 from __future__ import annotations
@@ -60,12 +60,12 @@ def test_a_save_location_is_mounted_and_its_folders_are_made_inside_it(api, plug
     assert linked.asked[0].server == "192.168.10.240" and linked.asked[0].share == "3d_Printing_Elves/Farmhand"
     assert linked.asked[0].username == "3delves" and linked.asked[0].password == "s3cret"
     assert [(f["label"], f["path"]) for f in page["folders"]] == [
-        ("Stream folder", ADDRESS + "\\stream"), ("YouTube clips", ADDRESS + "\\YouTube clips")]
-    assert (linked.share / "stream").is_dir() and (linked.share / "YouTube clips").is_dir()
+        ("Stream folder", ADDRESS + "\\Twitch stream"), ("Twitch clips", ADDRESS + "\\Twitch clips")]
+    assert (linked.share / "Twitch stream").is_dir() and (linked.share / "Twitch clips").is_dir()
     # the stream folder and clips now go there
-    assert api.get("/api/stream").json()["media"]["windows_path"] == ADDRESS + "\\stream"
+    assert api.get("/api/stream").json()["media"]["windows_path"] == ADDRESS + "\\Twitch stream"
     clips = api.get("/api/clips").json()["folder"]
-    assert clips["shown_as"] == ADDRESS + "\\YouTube clips" and clips["problem"] is None
+    assert clips["shown_as"] == ADDRESS + "\\Twitch clips" and clips["problem"] is None
     # the password never comes back, and a new login without one keeps it
     assert "s3cret" not in api.get("/api/save-location").text
     assert api.put("/api/save-location", json={"address": ADDRESS, "username": "3delves"}).status_code == 200
@@ -76,7 +76,7 @@ def test_a_folder_is_changed_to_another_inside_the_save_location(api, plugin, li
     api.put("/api/save-location", json={"address": ADDRESS, "username": "3delves", "password": "s3cret"})
     (linked.share / "Streams").mkdir()
     listed = api.get("/api/save-location/browse").json()
-    assert listed["shown_as"] == ADDRESS and "Streams" in listed["folders"] and "stream" in listed["folders"]
+    assert listed["shown_as"] == ADDRESS and "Streams" in listed["folders"] and "Twitch stream" in listed["folders"]
     made = api.post("/api/save-location/browse", json={"path": "Streams", "name": "2026"}).json()
     assert made["path"] == "Streams/2026" and made["shown_as"] == ADDRESS + "\\Streams\\2026"
     page = api.put("/api/save-location/folders/stream", json={"path": "Streams/2026"}).json()
@@ -103,6 +103,6 @@ def test_letting_the_save_location_go_needs_confirming(api, plugin, linked):
 
 
 def test_the_network_path_is_written_as_windows_writes_it():
-    assert save_location.network_path({"address": "//192.168.10.240/3d_Printing_Elves/Farmhand"}, "YouTube clips") == \
-        "\\\\192.168.10.240\\3d_Printing_Elves\\Farmhand\\YouTube clips"
+    assert save_location.network_path({"address": "//192.168.10.240/3d_Printing_Elves/Farmhand"}, "Twitch clips") == \
+        "\\\\192.168.10.240\\3d_Printing_Elves\\Farmhand\\Twitch clips"
     assert save_location.network_path({"address": "smb://nas/farm"}) == "\\\\nas\\farm"

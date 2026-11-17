@@ -59,14 +59,6 @@ class Farmhand:
         """GET /me: {plugin_id, permissions, api_version}."""
         return self.get("/me")
 
-    def stream_migration_state(self) -> dict:
-        """GET /stream/migrate (stream:migrate): {available, handed_over_at, has_settings}."""
-        return self.get("/stream/migrate")
-
-    def stream_migration(self) -> dict:
-        """POST /stream/migrate (stream:migrate): Farmhand's Stream page set-up, handed over once (410 after)."""
-        return self.call("POST", "/stream/migrate")
-
     def farm(self) -> dict:
         """GET /farm (farm:read): {mode, colors, time_zone}, so the page matches Farmhand when opened on its own."""
         return self.get("/farm")

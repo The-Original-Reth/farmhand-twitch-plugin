@@ -1,10 +1,10 @@
 """
-The one connection to YouTube, kept for as long as the stream is live, and what goes down it.
+The one connection to Twitch, kept for as long as the stream is live, and what goes down it.
 
 The picture ffmpeg makes the picture and compresses it (MPEG-TS on its stdout); the sender, an ffmpeg of its own,
-passes it on unchanged to YouTube (-c copy), so it costs next to nothing. Between them, the relay: it reads the picture
+passes it on unchanged to Twitch (-c copy), so it costs next to nothing. Between them, the relay: it reads the picture
 ffmpeg and writes the sender. Changing the layout starts a new picture ffmpeg beside the old one: once it's going, the
-relay switches over at its first whole frame (a keyframe comes every two seconds) and the old one is stopped. YouTube
+relay switches over at its first whole frame (a keyframe comes every two seconds) and the old one is stopped. Twitch
 never loses the connection; viewers see the new layout instead of a pause.
 
 Each picture ffmpeg is given its times from the stream's start (-output_ts_offset), so the sender sees one picture whose

@@ -1,6 +1,6 @@
 """
-The Stream plugin's settings, in its own store (secrets never answered), the saved layouts and the stream folder;
-the one-off move of Farmhand's own Stream page set-up; and what Farmhand asks of every plugin.
+The Twitch plugin's settings, in its own store (secrets never answered), the saved layouts and the stream folder;
+the Twitch extras, kept but not ready yet; and what Farmhand asks of every plugin.
 """
 from __future__ import annotations
 
@@ -10,10 +10,8 @@ import sys
 
 import pytest
 
-from streamer import config, farm, layouts, migrate, store
+from streamer import config, farm, store
 from streamer.live_stream.constants import SETTINGS_KEY, STREAM_KEY_KEY
-
-from .conftest import wait_until
 
 from .conftest import KEY, grid
 
@@ -52,32 +50,24 @@ def test_the_stream_folder_is_the_folder_the_container_is_given(api, plugin, tmp
     assert r.status_code == 503 and "isn't there" in r.json()["detail"]
 
 
-# ------------------------------------------------------------------ Farmhand's settings, brought over once
+# ------------------------------------------------------------------ Twitch: where it goes, and the extras to come
 
 
-def test_farmhands_stream_settings_are_brought_over_once(api, plugin, farmhand):
-    assert api.get("/api/migrate").json() == {"done": None, "own_settings": False}
-    r = api.post("/api/migrate", json={})
-    assert r.status_code == 200 and r.json()["done"]["stream_folder"] == "/data/nas/farmhand/stream"
+def test_the_stream_goes_to_twitch_only(api):
     page = api.get("/api/stream").json()
-    assert page["settings"]["title"] == "The farm" and page["settings"]["key_set"] is True
-    assert page["youtube"]["signed_in"] is True and page["youtube"]["client_id"] == "123-abc.apps.googleusercontent.com"
-    assert "GOCSPX-secret" not in json.dumps(page) and "1//refresh" not in json.dumps(page) and "abcd-efgh" not in json.dumps(page)
-    assert [x["name"] for x in layouts.layouts(plugin)] == ["Morning"]
-    # settings of its own now: not over them unless asked, and Farmhand hands over only once
-    assert "settings of its own" in api.post("/api/migrate", json={}).json()["detail"]
-    assert "only once" in api.post("/api/migrate", json={"replace": True}).json()["detail"]
+    assert page["destinations"] == [{"key": "twitch", "label": "Twitch"}] and page["settings"]["destination"] == "twitch"
+    assert [r["key"] for r in page["resolutions"]] == ["720p", "1080p"]
+    assert "Twitch only" in api.put("/api/stream", json={"destination": "youtube"}).json()["detail"]
+    assert "youtube" not in page and "title" not in page["settings"]
 
 
-def test_at_first_start_it_brings_them_over_only_with_the_permission(plugin, farmhand):
-    farmhand.permissions.discard("stream:migrate")
-    migrate.at_start(plugin)
-    assert wait_until(lambda: "/plugin-api/v1/me" in farmhand.calls)
-    assert not any(c.startswith("POST") for c in farmhand.calls)
-    farmhand.permissions.add("stream:migrate")
-    migrate.at_start(plugin)
-    assert wait_until(lambda: plugin.get(migrate.MIGRATED_KEY) is not None)
-    assert plugin.get(STREAM_KEY_KEY) == "abcd-efgh-ijkl"
+def test_the_twitch_extras_are_kept_but_cant_be_turned_on_yet(api):
+    page = api.get("/api/stream").json()
+    assert page["settings"]["twitch"] == {"title_from_printing": False, "chat_commands": False, "chat_on_screen": False}
+    assert page["settings"]["twitch_extras_ready"] is False
+    r = api.put("/api/stream", json={"twitch": {"chat_commands": True}})
+    assert r.status_code == 422 and "later version" in r.json()["detail"]
+    assert api.put("/api/stream", json={"twitch": {"chat_commands": False}}).status_code == 200
 
 
 # ------------------------------------------------------------------ what Farmhand asks of a plugin
@@ -85,7 +75,7 @@ def test_at_first_start_it_brings_them_over_only_with_the_permission(plugin, far
 
 def test_manifest_and_health(api, farmhand):
     m = api.get("/manifest").json()
-    assert m["id"] == "stream" and set(m["permissions"]) == {"cameras:read", "prints:read", "stream:migrate"}
+    assert m["id"] == "twitch" and set(m["permissions"]) == {"cameras:read", "prints:read"}
     assert api.get("/health").text == "ok"
     farm.cameras(store.store())
     config.settings.farmhand_token = "wrong"

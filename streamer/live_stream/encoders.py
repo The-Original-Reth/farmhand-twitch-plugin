@@ -1,7 +1,7 @@
 """
 How the picture is compressed for sending: on the processor (libx264, fast settings for live), or on an NVIDIA card's
 own video encoder (NVENC), which leaves the processor to read the cameras and lay out the grid. Both send H.264 at the
-same bitrate, so YouTube sees the same stream.
+same bitrate, so Twitch sees the same stream.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def encoder_args(encoder: str) -> list[str]:
 
 def compress_args(encoder: str, kbps: int) -> list[str]:
     """How every picture the stream sends is compressed: the live picture and the holding screen alike (the sender
-    passes both on unchanged, so YouTube must see the same video and sound throughout): H.264 at FPS, a keyframe every
+    passes both on unchanged, so Twitch must see the same video and sound throughout): H.264 at FPS, a keyframe every
     two seconds, a steady `kbps`; AAC sound at 128 kbps, 44.1 kHz."""
     return [*encoder_args(encoder), "-pix_fmt", "yuv420p", "-r", str(FPS), "-g", str(FPS * 2),
             "-b:v", f"{kbps}k", "-maxrate", f"{kbps}k", "-bufsize", f"{kbps * 2}k",

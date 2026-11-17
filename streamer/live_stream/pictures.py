@@ -1,6 +1,6 @@
 """
 The live stream's picture: an ffmpeg per layout, reading the cameras from its own pipes, kept going for as long as
-its layout is the one going out, and handed over to from the one before with no break in what YouTube gets
+its layout is the one going out, and handed over to from the one before with no break in what Twitch gets
 (relay.py). Part of runner.Stream.
 """
 from __future__ import annotations

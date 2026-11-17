@@ -1,10 +1,8 @@
 """
-Going live: every camera through its own feeder, a camera off, going live again after a restart (on the same
-YouTube broadcast), the words falling back to names, and never YouTube while being tried out.
+Going live: every camera through its own feeder, to Twitch; a camera off, going live again after a restart, the
+words falling back to names, and never Twitch while being tried out.
 """
 from __future__ import annotations
-
-import json
 
 import pytest
 
@@ -27,7 +25,7 @@ def test_going_live_reads_every_camera_through_its_own_feeder(api, ffmpeg, farmh
     assert wait_until(lambda: len(ffmpeg.commands) == 1 and len(ffmpeg.feeders) == 2)
     picture = ffmpeg.commands[0]
     assert "http://10.0.6.21/webcam/?action=stream" not in picture  # the picture never connects to a camera
-    assert picture.count("image2pipe") == 2 and ffmpeg.senders[0][-1] == f"rtmps://a.rtmps.youtube.com/live2/{KEY}"
+    assert picture.count("image2pipe") == 2 and ffmpeg.senders[0][-1] == f"rtmps://ingest.global-contribute.live-video.net:443/app/{KEY}"
     assert wait_until(lambda: [x["state"] for x in api.get("/api/stream").json()["status"]["camera_states"]] == ["live", "live"])
     assert store.store().get(runner.LIVE_KEY) == "1"
 
@@ -99,10 +97,8 @@ def test_the_words_fall_back_to_the_printers_name_while_farmhand_is_down(api, ff
     assert stream.status()["live"]  # the stream carries on
 
 
-def test_while_tried_out_the_stream_never_goes_to_youtube(api, ffmpeg, plugin, monkeypatch):
+def test_while_tried_out_the_stream_never_goes_to_twitch(api, ffmpeg, plugin, monkeypatch):
     monkeypatch.setattr(config.settings, "test_destination", "rtmp://127.0.0.1:1935/live")
-    plugin.put("youtube_client", json.dumps({"client_id": "x.apps.googleusercontent.com", "client_secret": "secretsecret"}))
-    plugin.put("youtube_refresh_token", "1//refresh")  # (signed in: still not YouTube)
     grid(api, [{"camera": "1:Bed"}, None])
     page = api.post("/api/stream/start").json()
     assert page["test_destination"] == "rtmp://127.0.0.1:1935/live"
@@ -110,63 +106,15 @@ def test_while_tried_out_the_stream_never_goes_to_youtube(api, ffmpeg, plugin, m
     assert ffmpeg.senders[0][-1] == f"rtmp://127.0.0.1:1935/live/{KEY}"
 
 
-# ------------------------------------------------------------------ the YouTube broadcast across restarts
+def test_going_live_needs_the_twitch_stream_key(api, ffmpeg, farmhand):
+    grid(api, [{"camera": "1:Bed"}, None])
+    api.put("/api/stream", json={"clear_key": True})
+    r = api.post("/api/stream/start")
+    assert r.status_code == 422 and "Twitch stream key" in r.json()["detail"]
+    assert ffmpeg.senders == []
 
 
-def test_going_live_again_carries_on_with_the_broadcast_still_live_on_the_stream(monkeypatch):
-    """After the plugin's own restart the broadcast it sent to is still live on YouTube (and goes on once the video is
-    back): it's carried on with, not a new one made that would wait "ready" behind it; one that never started is deleted."""
-    from streamer import youtube_live
-    from streamer.live_stream.broadcast import Broadcast
-
-    calls = []
-    listed = {
-        "active": [{"id": "other", "contentDetails": {"boundStreamId": "someone-else"}},
-                   {"id": "J4aj", "contentDetails": {"boundStreamId": "own"}}],
-        "upcoming": [{"id": "aHYU", "contentDetails": {"boundStreamId": "own"}}],
-    }
-
-    def api(method, path, token, params, body=None):
-        calls.append((method, path, params.get("id") or params.get("broadcastStatus")))
-        if method == "GET" and path == "/liveBroadcasts":
-            return {"items": listed[params["broadcastStatus"]]}
-        if method == "POST" and path == "/liveBroadcasts":
-            return {"id": "new"}
-        return {}
-
-    monkeypatch.setattr(youtube_live, "_access_token", lambda creds: "token")
-    monkeypatch.setattr(youtube_live, "_api", api)
-    chosen = {"youtube": {"privacy": "public"}, "title": "Printing", "description": ""}
-
-    b = Broadcast.start({}, {"id": "own"}, chosen)
-    assert b.id == "J4aj" and b.status()["watch_url"].endswith("v=J4aj")
-    assert ("DELETE", "/liveBroadcasts", "aHYU") in calls and not any(c[:2] == ("POST", "/liveBroadcasts") for c in calls)
-
-    listed["active"], listed["upcoming"] = [], []  # nothing live on it: a new one
-    assert Broadcast.start({}, {"id": "own"}, chosen).id == "new"
-
-
-def test_the_plugin_shutting_down_leaves_the_youtube_broadcast_live():
-    """A new image or a reboot stops the container: the broadcast is left live on YouTube, and the plugin carries on with
-    it when it's back. Only Stop (and going live afresh) ends it."""
-    ended = []
-
-    class Fake:
-        def __init__(self, name):
-            self.name, self.ended = name, False
-
-        def end(self):
-            ended.append(self.name)
-
-    stream._broadcast = Fake("kept")
-    stream.stop(forget=False, end_broadcast=False)
-    assert ended == [] and stream._broadcast is None
-    stream._broadcast = Fake("stopped")
-    stream.stop()
-    assert ended == ["stopped"]
-
-
-def test_the_volume_slider_is_heard_on_youtube_straight_away_without_being_saved(api, ffmpeg, farmhand, monkeypatch):
+def test_the_volume_slider_is_heard_on_twitch_straight_away_without_being_saved(api, ffmpeg, farmhand, monkeypatch):
     """Moving the volume slider while live changes the music going out at once, not saved; leaving the page (or a page
     that stops saying so) puts the saved volume back."""
     monkeypatch.setattr(runner, "TRYING_FOR", 0.3)

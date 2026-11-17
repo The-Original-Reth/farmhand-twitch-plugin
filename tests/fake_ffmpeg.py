@@ -1,6 +1,6 @@
 """
 ffmpeg as the Stream plugin starts it (each camera's feeder, the picture, and the sender that holds the connection to
-YouTube), for the stream tests: `ffmpeg` (conftest) puts FakeFfmpeg in its place. Each command is remembered, says what
+Twitch), for the stream tests: `ffmpeg` (conftest) puts FakeFfmpeg in its place. Each command is remembered, says what
 it's given to say on stderr, and runs until ended; a picture one puts out a keyframe, so a hand-over to it completes; a
 feeder puts out JPEGs while its camera is up (`down`: the addresses of cameras that are off). Copied from Farmhand's
 backend/tests/fake_ffmpeg.py, with the feeders added.

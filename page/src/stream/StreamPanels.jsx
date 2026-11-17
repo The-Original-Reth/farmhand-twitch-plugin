@@ -3,8 +3,7 @@ import { c } from "../theme.js";
 import { cancelButton, fieldBox, panelBox, primaryButton, uiText } from "../styles.js";
 import { heading, help, panel } from "./streamStyles.js";
 
-// The Stream page's panels: its on/off switch, on air or not, where it goes, taking turns, and the YouTube broadcast's
-// title and description.
+// The Stream page's panels: its on/off switch, on air or not, where it goes and its delay, and taking turns.
 
 const seconds = (v) => (v === "" || v == null ? "" : Number(v));
 
@@ -23,9 +22,7 @@ export function LayoutPanel({ shown, count, change, bare = false }) {
       <div style={bare ? uiText(13, c.heading, { fontWeight: 600 }) : heading}>Layout</div>
       {shown.resolution !== "720p" && (
         <div style={help}>
-          {shown.resolution === "1080p"
-            ? "1080p is sharp, and fine on a PC or the Proxmox container; on a Raspberry Pi, 720p is safer with several cameras."
-            : "2K is the sharpest, and the most work for the computer: best on a PC or the Proxmox container."}
+          1080p is sharp, and fine on a PC or the Proxmox container; on a Raspberry Pi, 720p is safer with several cameras.
         </div>
       )}
       <label style={uiText(13, c.textPrimary, { display: "flex", alignItems: "center", gap: 8 })}>
@@ -127,15 +124,14 @@ export function LiveStatusPanel({ status, destLabel, destination, busy, onStart,
                 status.delay
                   ? status.delay.filling
                     ? status.holding
-                      ? ` · Back after a restart: YouTube is shown the holding screen while the ${status.delay.seconds} s delay fills (${Math.round(status.delay.held)} s so far)`
-                      : ` · Collecting the ${status.delay.seconds} s delay before sending to YouTube (${Math.round(status.delay.held)} s so far)`
+                      ? ` · Back after a restart: Twitch is shown the holding screen while the ${status.delay.seconds} s delay fills (${Math.round(status.delay.held)} s so far)`
+                      : ` · Collecting the ${status.delay.seconds} s delay before sending to Twitch (${Math.round(status.delay.held)} s so far)`
                     : ` · ${Math.round(status.delay.held)} s of the ${status.delay.seconds} s delay held`
                   : ""}${status.changing ? " · Changing to the new layout: it takes over in a few seconds, with no break" : ""}`
               : off
                 ? "The stream is off: ffmpeg isn't running on the server. Set everything up as usual, and turn it on above to go live."
                 : `Farmhand sends the grid below to ${destLabel(destination)} itself, no OBS needed.`}
         </div>
-        {status.live && status.youtube && <YouTubeLiveLine yt={status.youtube} />}
         {status.live && status.selfCheck && (
           <div data-testid="stream-self-check" style={uiText(12, c.amber, { marginTop: 6, lineHeight: 1.5 })}>
             {timeOf(status.selfCheck.at)}: {status.selfCheck.message}
@@ -158,39 +154,17 @@ export function LiveStatusPanel({ status, destLabel, destination, busy, onStart,
   );
 }
 
-const HEALTH = { good: ["Healthy", "green"], ok: ["OK", "green"], bad: ["Poor", "amber"], noData: ["Not receiving video yet", "amber"] };
-const STATE = { created: "being set up", ready: "waiting for the video", testStarting: "starting", testing: "testing", liveStarting: "starting",
-  live: "live", complete: "ended", revoked: "taken down", gone: "gone" };
 
-// What YouTube says of the broadcast Farmhand made (read about once a minute): its state, health, viewers, and links
-function YouTubeLiveLine({ yt }) {
-  const [healthWord, tone] = HEALTH[yt.health] || ["Asking YouTube…", "textMuted"];
-  return (
-    <div data-testid="stream-youtube-live" style={uiText(12, c.textMuted, { marginTop: 6, lineHeight: 1.5 })}>
-      <span>
-        YouTube: <span style={{ color: c[tone], fontWeight: 600 }}>{healthWord}</span>
-        {yt.state ? ` · broadcast ${STATE[yt.state] || yt.state}` : ""}
-        {yt.viewers !== null ? ` · ${yt.viewers} watching` : ""}
-        {" · "}
-        <a href={yt.watchUrl} target="_blank" rel="noreferrer" style={{ color: c.link }}>Watch</a>
-        {" · "}
-        <a href={yt.studioUrl} target="_blank" rel="noreferrer" style={{ color: c.link }}>Chat and analytics in YouTube Studio</a>
-      </span>
-      {yt.issues.map((i) => <div key={i} style={{ color: c.amber }}>{i}</div>)}
-    </div>
-  );
-}
-
-// Where it goes, and the stream's delay (the stream key and the rest of YouTube are in the YouTube settings window)
-// `delay`, `onDelay`: seconds the stream is held before YouTube gets it (saved with Save; applies when going live).
-// `youtubeSettings`: the YouTube settings button and its summary (the stream key, title and account are in its window).
-export function WhereToPanel({ destination, destinations, onDestination, delay = 60, onDelay, live = false, youtubeSettings = null }) {
+// Where it goes, and the stream's delay (the stream key and the rest of Twitch are in the Twitch settings window)
+// `delay`, `onDelay`: seconds the stream is held before Twitch gets it (saved with Save; applies when going live).
+// `settings`: the Twitch settings button and its summary (the stream key and the extras are in its window).
+export function WhereToPanel({ destination, destinations, onDestination, delay = 60, onDelay, live = false, settings = null }) {
   return (
     <div style={panel()}>
       <div style={heading}>Where to</div>
       <label style={uiText(12, c.textMuted, { display: "flex", alignItems: "center", gap: 10 })}>
         <span style={{ width: 90 }}>Stream to</span>
-        {/* a choice only once there's more than one (YouTube Live for now) */}
+        {/* a choice only once there's more than one (Twitch only) */}
         {destinations.length > 1 ? (
           <select data-testid="stream-destination" value={destination} onChange={(e) => onDestination(e.target.value)} style={{ ...fieldBox(), padding: "6px 8px" }}>
             {destinations.map((d) => (
@@ -201,7 +175,7 @@ export function WhereToPanel({ destination, destinations, onDestination, delay =
           <span data-testid="stream-destination" style={uiText(13, c.text)}>{destinations[0]?.label}</span>
         )}
       </label>
-      {youtubeSettings}
+      {settings}
       <label style={uiText(12, c.textMuted, { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" })}>
         <span style={{ width: 90 }}>Stream delay</span>
         <input
@@ -211,7 +185,7 @@ export function WhereToPanel({ destination, destinations, onDestination, delay =
         <span>seconds (0 to 120)</span>
       </label>
       <div style={help}>
-        Farmhand holds this much of the stream before YouTube gets it, so a hiccup shorter than that (a camera, the processor
+        The plugin holds this much of the stream before Twitch gets it, so a hiccup shorter than that (a camera, the processor
         falling behind for a moment) never reaches viewers. They see everything this much later.
         {live ? " A new delay applies the next time you go live." : ""}
       </div>

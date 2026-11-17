@@ -101,7 +101,7 @@ def command(ffmpeg: str, srcs: list[Source], url: str, look: Look | None = None)
     square with the printer and its print written along its foot; each card its colour, its picture (or slideshow,
     each picture over the first in its own seconds) fitted over it and its words over that; an empty square the stream's
     background colour; every square with a border round it; the sound (Farmhand's music player's, or a silent sound
-    track: YouTube wants sound); sent as FLV to `url`.
+    track: Twitch wants sound); sent as FLV to `url`.
 
     Taking turns works the way Monitor's enlarging does: only the camera on screen is made full size. Every camera's
     picture goes to a switch (streamselect "pick") that lets through only the one whose turn it is, and only that one

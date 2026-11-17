@@ -9,19 +9,18 @@ import { StreamPreview } from "./StreamPreview.jsx";
 import { cameraOf, followCameras, printerOf } from "./shapes.js";
 import { LiveStatusPanel, MuteSwitch, StreamSwitch, WhereToPanel } from "./StreamPanels.jsx";
 import { DefaultsPanel } from "./StreamSquares.jsx";
-import { STREAM_CHANNEL, YouTubeSettingsButton, openYouTubeSettings } from "./YouTubeSettings.jsx";
+import { STREAM_CHANNEL, TwitchSettingsButton, openTwitchSettings } from "./TwitchSettings.jsx";
 import { MusicPanel } from "./MusicPanel.jsx";
 import { HoldingScreenPanel } from "./HoldingScreen.jsx";
 import { SaveChoice, SavedLayoutsPanel, sameAs, shownOf } from "./SavedLayouts.jsx";
 
-// The Stream page: Farmhand sends the printers' cameras live to YouTube itself, laid out in a grid of
+// The Stream page: the plugin sends the printers' cameras live to Twitch itself, laid out in a grid of
 // squares (each a camera, a logo or nothing, with a border round it) or taking turns, with each printer's name and print
-// written under its camera. No OBS needed. Everything YouTube (the broadcast's title, tags and privacy, the stream key,
-// the account) is in the YouTube settings window (YouTubeSettings.jsx), which saves on its own; this page's Save never
-// sends those. Cameras are found as on Monitor (cameras.js) and named the same way ("printer id:camera
+// written under its camera. No OBS needed. Everything Twitch (the stream key, the extras to come) is in the
+// Twitch settings window (TwitchSettings.jsx), which saves on its own; this page's Save never sends those. Cameras are found as on Monitor (cameras.js) and named the same way ("printer id:camera
 // name").
 const STATUS_EVERY_MS = 5000;
-const MUTE_KEY = "farmhand-stream-music-muted"; // Mute, kept in this browser
+const MUTE_KEY = "farmhand-twitch-music-muted"; // Mute, kept in this browser (not the YouTube plugin's: the pages share Farmhand's address)
 const mutedAtFirst = () => {
   try {
     return localStorage.getItem(MUTE_KEY) === "1";
@@ -47,11 +46,11 @@ export function StreamSection({ layouts = [], onSaveLayouts, onSlideshowRenamed,
     }
   };
   const [musicWaits, setMusicWaits] = useState(false); // the browser holds the music back until the page is clicked
-  const [page, setPage] = useState(null); // what the server says: { settings, status, destinations, resolutions, fonts, media, youtube }
+  const [page, setPage] = useState(null); // what the server says: { settings, status, destinations, resolutions, fonts, media }
   const enabled = page?.settings.enabled !== false; // the switch: off, nothing streams (the page works as ever)
   const { cams } = usePrinterCameras(active);
   const [draft, setDraft] = useState(null); // the choices as changed here, not saved yet (null = as saved)
-  const [busy, setBusy] = useState(null); // "save" | "start" | "stop" | "logo" | "youtube" while the server is asked
+  const [busy, setBusy] = useState(null); // "save" | "start" | "stop" | "logo" while the server is asked
   const [problem, setProblem] = useState(null); // what the server last refused, and why
   const [choosing, setChoosing] = useState(false); // Save asking: a new layout, or over one there is
   const [fromLayout, setFromLayout] = useState(null); // the saved layout last used or saved here: Save suggests overwriting it
@@ -70,7 +69,7 @@ export function StreamSection({ layouts = [], onSaveLayouts, onSlideshowRenamed,
         .catch((e) => live && setLoadError(errorText(e)));
     ask(true);
     const timer = setInterval(ask, STATUS_EVERY_MS);
-    // the YouTube settings window saved: shown straight away (squares and the rest changed here and not saved stay so)
+    // the Twitch settings window saved: shown straight away (squares and the rest changed here and not saved stay so)
     let heard = null;
     try {
       heard = new BroadcastChannel(STREAM_CHANNEL);
@@ -78,7 +77,7 @@ export function StreamSection({ layouts = [], onSaveLayouts, onSlideshowRenamed,
         getStream().then((p) => {
           if (!live) return;
           setPage(p);
-          setDraft((d) => d && { ...d, title: p.settings.title, description: p.settings.description, youtube: p.settings.youtube });
+          setDraft((d) => d && { ...d, twitch: p.settings.twitch });
         }).catch(() => {});
     } catch {
       // (an old browser: the next look catches up)
@@ -264,16 +263,7 @@ export function StreamSection({ layouts = [], onSaveLayouts, onSlideshowRenamed,
         <WhereToPanel
           destination={shown.destination} destinations={page.destinations} onDestination={(destination) => change({ destination })}
           delay={shown.delay} onDelay={(v) => change({ delay: v })} live={status.live}
-          youtubeSettings={
-            <>
-              <YouTubeSettingsButton shown={saved} youtube={page.youtube} keySet={saved.keySet} onOpen={openYouTubeSettings} />
-              {status.title && (
-                <div data-testid="stream-title-status" style={uiText(12, status.title.state === "failed" ? c.danger : status.title.state === "done" ? c.green : c.amber, { lineHeight: 1.5 })}>
-                  {status.title.message}
-                </div>
-              )}
-            </>
-          }
+          settings={<TwitchSettingsButton keySet={saved.keySet} onOpen={openTwitchSettings} />}
         />
 
         <HoldingScreenPanel shown={shown} change={change} media={page.media} fonts={page.fonts} saved={saved.holding} onSave={saveHolding} busy={busy} />

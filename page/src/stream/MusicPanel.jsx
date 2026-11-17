@@ -9,7 +9,7 @@ import { OpenFolder } from "./MediaChoices.jsx";
 // The stream's music: MP3s in the stream folder's music folder (StreamBeats, say), played one after another and round
 // again (shuffled each round, if chosen), in place of the silent sound track, starting with the stream. On or off, its
 // volume and shuffling are saved with the page's Save (and followed straight away while live; the volume is heard on
-// YouTube as the slider moves, before Save, and the saved one comes back when the page is left); tracks are uploaded and
+// Twitch as the slider moves, before Save, and the saved one comes back when the page is left); tracks are uploaded and
 // deleted straight away. Back, Play/Pause and Next, beside "Play music on the stream": while live, the music going out
 // (the server's music player); not live, the tracks played here in this browser, at the volume chosen, to hear how they
 // sound (each track's own ▶ too). `shown`/`change`: the page's choices; `media`: the stream folder (media.music: the
@@ -23,7 +23,7 @@ const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStar
 const small = { ...headerButton(), padding: "0 6px" };
 const SAY_AGAIN = 8000; // ms between saying a tried volume again (the server lets one go after 20 s without)
 
-// While live, the volume slider is heard on YouTube straight away, not saved: a volume other than the saved one is sent
+// While live, the volume slider is heard on Twitch straight away, not saved: a volume other than the saved one is sent
 // (and said again while it stays), and the saved one is put back when the slider's back on it, the change is undone,
 // saved, or the page is left.
 function useVolumeHeardLive(live, volume, saved) {

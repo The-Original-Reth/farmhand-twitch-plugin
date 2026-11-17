@@ -1,12 +1,12 @@
 """
 The Stream plugin's web server: its page (shown inside Farmhand at /plugins/stream/), the Stream page's API under
 /api/stream (routes.py), what else the page reads (page_routes.py), and what Farmhand asks of every plugin (/manifest,
-/health), and clips (clip_routes.py: the last seconds of what went to YouTube, saved as MP4s).
+/health), and clips (clip_routes.py: the last seconds of what went to Twitch, saved as MP4s).
 
 Besides the stream itself, the page reads only what the plugin hands it: the farm's printers and cameras (from
 Farmhand's /cameras, through the plugin), each printer's print, and a camera's latest picture for the preview (from
 its feeder while live, else from the camera's snapshot address, else a frame taken from its video). The page never talks to Farmhand or the cameras
-itself, and nothing here ever answers the stream key, the Google client secret or the YouTube sign-in.
+itself, and nothing here ever answers the stream key.
 """
 from __future__ import annotations
 

@@ -1,8 +1,8 @@
 """
-Clips: the last second to five minutes of what YouTube has been sent, saved as an MP4 in the clips folder.
+Clips: the last second to five minutes of what Twitch has been sent, saved as an MP4 in the clips folder.
 
-What goes to YouTube (the delay's buffer hands each piece to the sender, buffer.py) is also kept here, the last
-MOST_SECONDS and a little more, by when it went out: so a clip is what YouTube was given, holding screen and all, and
+What goes to Twitch (the delay's buffer hands each piece to the sender, buffer.py) is also kept here, the last
+MOST_SECONDS and a little more, by when it went out: so a clip is what Twitch was given, holding screen and all, and
 "the last 30 seconds" is the 30 seconds just played out. A clip starts at the picture's first whole frame (a keyframe,
 every 2 s) at or just before the time asked for, and is copied as it is (-c copy: no work, no loss) from MPEG-TS into
 an MP4 named for when it was taken. It's written beside its final name and renamed into place once whole, so the
@@ -34,12 +34,12 @@ SHOWN = 10  # the newest clips the page lists
 SAVE_TIMEOUT = 120  # seconds ffmpeg may take to copy a clip into an MP4 (five minutes of stream, onto a NAS share)
 NAME = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}-[0-9]{2}-[0-9]{2}( [0-9]+)?( [^/\\]{1,80}?)? \([0-9]+ s\)\.mp4$")
 KEYFRAME_EVERY = 2  # seconds: how often a go2rtc camera (and the stream) sends a whole picture
-STREAM = "stream"  # the source that is what goes to YouTube (the others: cameras, "printer id:camera name")
+STREAM = "stream"  # the source that is what goes to Twitch (the others: cameras, "printer id:camera name")
 UNSAFE = re.compile(r'[/\\:*?"<>|\x00-\x1f]+')  # (left out of a camera's name in a clip's name)
 
 
 class Recent:
-    """What YouTube has been sent lately: (when it went out, MPEG-TS) pieces, the last MOST_SECONDS + EXTRA."""
+    """What Twitch has been sent lately: (when it went out, MPEG-TS) pieces, the last MOST_SECONDS + EXTRA."""
 
     def __init__(self, keep: float = MOST_SECONDS + EXTRA, clock=time.monotonic):
         self.keep = keep
@@ -57,7 +57,7 @@ class Recent:
                 self._pieces.popleft()
 
     def held(self) -> float:
-        """Seconds of what went to YouTube kept now (0 before anything has)."""
+        """Seconds of what went to Twitch kept now (0 before anything has)."""
         with self._lock:
             return round(self._clock() - self._pieces[0][0], 1) if self._pieces else 0.0
 
@@ -83,7 +83,7 @@ class Recent:
             self._pieces.clear()
 
 
-# What YouTube has been sent, for clips: the one the stream adds to (runner gives it to each delay's buffer)
+# What Twitch has been sent, for clips: the one the stream adds to (runner gives it to each delay's buffer)
 recent = Recent()
 
 
@@ -110,7 +110,7 @@ def set_seconds(db, seconds: int) -> int:
 def folder_problem(folder: Path) -> str | None:
     """Why clips can't be saved in `folder` now, in words for the page, or None."""
     if not folder.is_dir():
-        return (f"There's no clips folder: give the plugin's container one at {folder} (the NAS's YouTube clips folder, "
+        return (f"There's no clips folder: give the plugin's container one at {folder} (the NAS's Twitch clips folder, "
                 "mounted on its machine), then start it again.")
     if not os.access(folder, os.W_OK):
         return f"The plugin can't write in the clips folder ({folder}): check the share's permissions."
@@ -137,7 +137,7 @@ def clip_path(folder: Path, name: str) -> Path:
 
 
 def save(ffmpeg: str, folder: Path, seconds: int, tz: str | None = None, run=None) -> dict:
-    """The last `seconds` that went to YouTube, saved in the folder as an MP4 named for now (in time zone `tz`, the
+    """The last `seconds` that went to Twitch, saved in the folder as an MP4 named for now (in time zone `tz`, the
     page's own; the plugin's otherwise): {name, seconds (as saved), size}. ValueError says why it couldn't be. (`run`:
     subprocess.run, which tests swap.)"""
     run = run or subprocess.run
@@ -146,7 +146,7 @@ def save(ffmpeg: str, folder: Path, seconds: int, tz: str | None = None, run=Non
         raise ValueError(problem)
     data, got = recent.last(clamp(seconds))
     if not data:
-        raise ValueError("Nothing has gone to YouTube yet: a clip is taken from what the stream has sent.")
+        raise ValueError("Nothing has gone to Twitch yet: a clip is taken from what the stream has sent.")
     when = datetime.now(_zone(tz))
     name = _free_name(folder, f"{when:%Y-%m-%d %H-%M-%S}", round(got))
     final, part = folder / name, folder / f".{name}.part"

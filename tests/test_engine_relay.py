@@ -1,4 +1,4 @@
-"""The Stream page: the relay that hands one picture over to the next at a keyframe, and the delay's buffer before YouTube."""
+"""The Stream page: the relay that hands one picture over to the next at a keyframe, and the delay's buffer before Twitch."""
 from __future__ import annotations
 
 import threading

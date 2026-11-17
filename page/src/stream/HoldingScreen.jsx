@@ -5,7 +5,7 @@ import { ColourPick, FontPick, panelRow, panelSwatch } from "./controls.jsx";
 import { fontFamily } from "./shapes.js";
 import { heading, help, panel } from "./streamStyles.js";
 
-// The holding screen: what YouTube is shown for about a minute after the Stream plugin's own restart (an update, a
+// The holding screen: what Twitch is shown for about a minute after the Stream plugin's own restart (an update, a
 // reboot), while the delay fills again behind it, so the broadcast never goes without video. Its words, a picture from
 // the stream folder, and its colours and font (each left empty: the stream's own). Saved with its own Save (`onSave`:
 // just the holding screen, anything else changed on the page stays to be saved) or with the page's Save.
@@ -45,8 +45,8 @@ export function HoldingScreenPanel({ shown, change, media, fonts, saved, onSave,
         </button>
       </div>
       <div style={help}>
-        Shown on YouTube for about a minute after the Stream plugin restarts (an update or a reboot), while the delay fills
-        again behind it. YouTube keeps getting video, so the broadcast carries on, and then switches to the cameras.
+        Shown on Twitch for about a minute after the plugin restarts (an update or a reboot), while the delay fills
+        again behind it. Twitch keeps getting video, so the channel stays live, and then switches to the cameras.
       </div>
 
       <div

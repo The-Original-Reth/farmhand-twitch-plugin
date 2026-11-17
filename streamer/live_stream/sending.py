@@ -1,5 +1,5 @@
 """
-The live stream's sender: the one connection to YouTube, an ffmpeg passing on what the delay's buffer gives it,
+The live stream's sender: the one connection to Twitch, an ffmpeg passing on what the delay's buffer gives it,
 started again whenever it drops; and what every ffmpeg says, kept (the stream key blanked out). Part of runner.Stream.
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ class SendingMixin:
     """The sender, and what the ffmpegs say (state on runner.Stream)."""
 
     def _keep_sending(self, gen: int, args: list[str], buffer: Buffer) -> None:
-        """The sender, started again whenever it stops (the connection to YouTube dropped), for as long as it's live."""
+        """The sender, started again whenever it stops (the connection to Twitch dropped), for as long as it's live."""
         while self._current(gen):
             try:
                 proc = procs.popen(args, feed=True)
@@ -41,7 +41,7 @@ class SendingMixin:
                 return
             with self._lock:
                 last = next((l for l in reversed(self._said) if l), None)
-                self._error = (f"The connection to {self._destination and DESTINATIONS[self._destination]['label'] or 'YouTube'} dropped "
+                self._error = (f"The connection to {self._destination and DESTINATIONS[self._destination]['label'] or 'Twitch'} dropped "
                                f"(ffmpeg exit {code}): {last or 'no reason given'}. Connecting again in {RETRY_SECONDS} s.")
                 if time.monotonic() - started > 60:
                     self._said.clear()

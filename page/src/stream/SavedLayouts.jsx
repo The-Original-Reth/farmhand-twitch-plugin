@@ -5,7 +5,7 @@ import { cancelButton, fieldBox, headerButton, panelBox, primaryButton, uiText }
 
 // The Stream page's saved layouts, kept in Farmhand's settings (and so in the settings copy's streams folder, and brought
 // back by Load all). A layout is the grid (its size and what's in each square), the whole grid or taking turns, the
-// timings, the words and the border's colour; not the key, title or description. The page's Save saves
+// timings, the words and the border's colour; not the stream key. The page's Save saves
 // one (SaveChoice: a new one, or over one there is); this panel switches the stream to one, or deletes it.
 
 // A layout as the settings keep it, from the page's choices

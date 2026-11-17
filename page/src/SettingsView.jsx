@@ -9,7 +9,7 @@ import { length, parseLength } from "./ClipLength.jsx";
 
 // The plugin's settings as Farmhand's Settings page shows them, under the plugin's name (the manifest's settings_page,
 // ?view=settings), laid out as Farmhand's own: its save location on the NAS (typed as \\server\share\folder with its
-// login; the plugin connects to it itself), the folders inside it (the stream folder and YouTube clips), each as people
+// login; the plugin connects to it itself), the folders inside it (the stream folder and Twitch clips), each as people
 // reach it on the network and with its own Change…, and how long a clip is.
 //
 // The address, login and clip length are typed here and kept with Save: inside Farmhand, the Save on the plugin's

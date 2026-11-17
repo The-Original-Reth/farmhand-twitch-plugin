@@ -1,5 +1,5 @@
 """
-The holding screen: what YouTube is shown after the plugin's own restart while the delay fills again.
+The holding screen: what Twitch is shown after the plugin's own restart while the delay fills again.
 """
 from __future__ import annotations
 

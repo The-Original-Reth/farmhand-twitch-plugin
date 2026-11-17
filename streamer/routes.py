@@ -5,9 +5,9 @@ import os
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
-from . import live_stream, storage, stream_media, youtube_live
+from . import live_stream, storage, stream_media
 from .errors import answer_errors
-from .schemas import SlideshowIn, SlideshowOrderIn, StreamSettingsIn, YouTubeClientIn, YouTubeSignOutIn
+from .schemas import SlideshowIn, SlideshowOrderIn, StreamSettingsIn
 from .store import Store, session_factory, store
 
 
@@ -21,10 +21,8 @@ def require_confirm(confirm: bool) -> None:
     if not confirm:
         raise HTTPException(status_code=409, detail="Deleting needs confirm=true.")
 
-# The Stream page's API (as Farmhand's own Stream page had it, before Stream became this plugin), under the
-# plugin's /api/stream: printers' cameras sent live to YouTube (see live_stream/), and the YouTube broadcast, made and
-# changed through YouTube's API (live_stream/broadcast.py). The stream key, the Google client secret and the YouTube
-# sign-in go in and never come back out: answers only say they're there. (Where the stream folder is isn't chosen
+# The Stream page's API (as in the YouTube Stream plugin it was copied from), under the plugin's /api/stream: printers' cameras sent
+# live to Twitch (see live_stream/). The stream key goes in and never comes back out: answers only say it's there. (Where the stream folder is isn't chosen
 # here: it's the folder the plugin's container is given.)
 router = APIRouter(prefix="/api/stream", tags=["stream"])
 
@@ -42,16 +40,15 @@ def _restart_if_live(db: Store) -> None:
 
 @router.get("")
 def stream_page(db: Store = Depends(get_db)):
-    """{settings, media, status, destinations, resolutions, youtube}: see live_stream.page. Also moves a YouTube
-    sign-in along."""
+    """{settings, media, status, destinations, resolutions, fonts}: see live_stream.page."""
     return live_stream.page(db)
 
 
 @router.put("")
 def save_settings(payload: StreamSettingsIn, db: Store = Depends(get_db)):
     """
-    Save the stream's settings. While live: a change to the picture starts the stream again with it; a new title,
-    description or YouTube setting is set on the YouTube broadcast straight away; turning the stream off (enabled: false) stops it.
+    Save the stream's settings. While live: a change to the picture starts the stream again with it; turning the
+    stream off (enabled: false) stops it.
     """
     with answer_errors():
         before = live_stream.settings(db)
@@ -59,8 +56,7 @@ def save_settings(payload: StreamSettingsIn, db: Store = Depends(get_db)):
             db, destination=payload.destination, chosen=payload.cameras, show_status=payload.show_status, layout=payload.layout,
             seconds_all=payload.seconds_all, seconds_each=payload.seconds_each, resolution=payload.resolution,
             border_color=payload.border_color, background=payload.background, font=payload.font, color=payload.color, enabled=payload.enabled, cols=payload.cols, rows=payload.rows, cells=payload.cells,
-            title=payload.title, description=payload.description,
-            music=payload.music, music_volume=payload.music_volume, music_shuffle=payload.music_shuffle, delay=payload.delay, youtube=payload.youtube, holding=payload.holding,
+            music=payload.music, music_volume=payload.music_volume, music_shuffle=payload.music_shuffle, delay=payload.delay, twitch=payload.twitch, holding=payload.holding,
             stream_key=payload.stream_key, clear_key=payload.clear_key,
         )
         live = live_stream.stream.status()["live"]
@@ -70,10 +66,6 @@ def save_settings(payload: StreamSettingsIn, db: Store = Depends(get_db)):
             _restart_if_live(db)
         elif live and any(before[k] != after[k] for k in MUSIC):
             live_stream.stream.music_settings(after)
-        elif (live and after["destination"] == "youtube"
-              and (before["title"], before["description"], before["youtube"]) != (after["title"], after["description"], after["youtube"])):
-            text_changed = (before["title"], before["description"]) != (after["title"], after["description"])
-            live_stream.stream.send_to_youtube(db, after, text_changed=text_changed)
     return live_stream.page(db)
 
 
@@ -284,35 +276,3 @@ def delete_track(name: str, confirm: bool = Query(False), db: Store = Depends(ge
     _media(lambda: stream_media.remove_track(db, name))
     return live_stream.page(db)
 
-
-# ------------------------------------------------------------------ signing in to YouTube
-
-
-@router.put("/youtube")
-def youtube_client(payload: YouTubeClientIn, db: Store = Depends(get_db)):
-    """The Google OAuth client to sign in with. A different client ID signs out."""
-    with answer_errors():
-        youtube_live.set_client(db, payload.client_id, payload.client_secret)
-    return live_stream.page(db)
-
-
-@router.post("/youtube/sign-in")
-def youtube_sign_in(db: Store = Depends(get_db)):
-    """Start signing in: youtube.signing_in gives the code to enter at google.com/device. GET /stream finishes it."""
-    with answer_errors():
-        youtube_live.start_sign_in(db)
-    return live_stream.page(db)
-
-
-@router.post("/youtube/sign-out")
-def youtube_sign_out(payload: YouTubeSignOutIn | None = None, db: Store = Depends(get_db)):
-    youtube_live.sign_out(db, forget_client=bool(payload and payload.forget_client))
-    return live_stream.page(db)
-
-
-@router.post("/youtube/apply")
-def youtube_apply(db: Store = Depends(get_db)):
-    """Set the saved title, description and YouTube settings on the live broadcast now. status.title says how it went."""
-    with answer_errors():
-        live_stream.stream.send_to_youtube(db, live_stream.settings(db), asked=True)
-    return live_stream.page(db)

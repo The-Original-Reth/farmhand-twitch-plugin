@@ -1,5 +1,5 @@
 """
-Clips: what went to YouTube kept for five minutes and a little more, and the last 1 second to 5 minutes of it saved
+Clips: what went to Twitch kept for five minutes and a little more, and the last 1 second to 5 minutes of it saved
 as an MP4 in the clips folder, starting at a whole frame (live_stream/clips.py, clip_routes.py).
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ def _second(clock, recent, key: bool):
     clock.now += 1
 
 
-def test_what_went_to_youtube_is_kept_five_minutes_and_a_little_more():
+def test_what_went_to_twitch_is_kept_five_minutes_and_a_little_more():
     clock = Clock()
     recent = clips.Recent(clock=clock)
     assert recent.held() == 0 and recent.last(30) == (b"", 0.0)
@@ -132,7 +132,7 @@ def test_a_clip_that_cant_be_saved_says_why(tmp_path, kept, monkeypatch):
         clips.save("ffmpeg", tmp_path, 30, run=fails)
     assert list(tmp_path.iterdir()) == []  # (nothing half-made left)
     kept.clear()
-    with pytest.raises(ValueError, match="Nothing has gone to YouTube yet"):
+    with pytest.raises(ValueError, match="Nothing has gone to Twitch yet"):
         clips.save("ffmpeg", tmp_path, 30, run=_ffmpeg_makes_an_mp4([]))
 
 
@@ -141,10 +141,10 @@ def test_a_clip_that_cant_be_saved_says_why(tmp_path, kept, monkeypatch):
 
 @pytest.fixture()
 def clips_api(api, tmp_path, monkeypatch, kept):
-    folder = tmp_path / "YouTube clips"
+    folder = tmp_path / "Twitch clips"
     folder.mkdir()
     monkeypatch.setattr(config.settings, "clips_dir", folder)
-    monkeypatch.setattr(config.settings, "clips_shown_as", r"\\nas\3d_Printing_Elves\Farmhand\YouTube clips")
+    monkeypatch.setattr(config.settings, "clips_shown_as", r"\\nas\3d_Printing_Elves\Farmhand\Twitch clips")
     from streamer.live_stream import procs
     monkeypatch.setattr(procs, "ffmpeg_path", lambda: "/usr/bin/ffmpeg")
     monkeypatch.setattr(clips.subprocess, "run", _ffmpeg_makes_an_mp4([]))
@@ -155,7 +155,7 @@ def test_the_page_sets_how_long_a_clip_is_and_takes_one(clips_api):
     api, folder = clips_api
     page = api.get("/api/clips").json()
     assert page["seconds"] == 3 and (page["least"], page["most"]) == (1, 300) and page["held"] > 100  # (3 s unless changed)
-    assert page["folder"] == {"path": str(folder), "shown_as": r"\\nas\3d_Printing_Elves\Farmhand\YouTube clips", "problem": None}
+    assert page["folder"] == {"path": str(folder), "shown_as": r"\\nas\3d_Printing_Elves\Farmhand\Twitch clips", "problem": None}
     assert page["clips"] == []
 
     assert api.put("/api/clips", json={"seconds": 0}).status_code == 422

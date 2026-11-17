@@ -37,23 +37,21 @@ export const getLayouts = async () => (await request("/layouts")).layouts;
 export const saveLayouts = async (layouts) => (await request("/layouts", jsonBody("PUT", { layouts }))).layouts;
 
 // Farmhand's own Stream page set-up, brought over once: { done: { at, stream_folder } | null, own_settings }
-export const getMigration = () => request("/migrate");
-export const migrateNow = (replace = false) => request("/migrate", jsonBody("POST", { replace }));
 export { post };
 
-// Clips: the last 1 second to 5 minutes of what went to YouTube, saved as MP4s in the clips folder (the NAS's
-// "YouTube clips"). { seconds (a clip's length, as set), least, most, held (seconds of stream kept now), folder: { path,
+// Clips: the last 1 second to 5 minutes of what went to Twitch, saved as MP4s in the clips folder (the NAS's
+// "Twitch clips"). { seconds (a clip's length, as set), least, most, held (seconds of stream kept now), folder: { path,
 // shownAs, problem }, clips: [{ name, size, made }] (newest first) }
 const normalizeClips = (r) => ({ ...r, folder: { path: r.folder.path, shownAs: r.folder.shown_as, problem: r.folder.problem } });
 export const getClips = async () => normalizeClips(await request("/clips"));
 export const setClipLength = async (seconds) => normalizeClips(await request("/clips", jsonBody("PUT", { seconds })));
-// source: "stream" (the last stretch of what went to YouTube: { name, seconds, size }) or a camera, "printer id:camera
+// source: "stream" (the last stretch of what went to Twitch: { name, seconds, size }) or a camera, "printer id:camera
 // name" (the next stretch from it, recorded in the background: { recording: { source, label, seconds, started, until } })
 export const takeClip = (tz, source = "stream") => request("/clips", jsonBody("POST", { tz: tz || null, source }));
 export const clipUrl = (name) => `${API_BASE}/clips/${encodeURIComponent(name)}`;
 
 // Where the plugin saves: a save location on the NAS (\server\share\folder and its login) that the plugin mounts itself,
-// with the stream folder and the YouTube clips folder inside it. { address (null: none yet, the container's own folders),
+// with the stream folder and the Twitch clips folder inside it. { address (null: none yet, the container's own folders),
 // username, domain, version, hasPassword, mounted, problem, capability: { ok, message }, folders: [{ key, label, path (as
 // people reach it), relative (inside the save location, or null), problem }] }
 const normalizeSaveLocation = (r) => ({ ...r, hasPassword: r.has_password });

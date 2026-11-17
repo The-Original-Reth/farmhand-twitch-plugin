@@ -3,8 +3,9 @@ Where the plugin saves, set on its settings page (shown on Farmhand's Settings p
 Farmhand sets its own: a save location on the NAS, typed as \\server\share\folder with its login, which the plugin
 mounts itself (mounts.py), and a folder inside it for each kind of thing it keeps:
 
-    stream   the stream folder: its pictures, slideshows and music ("stream" unless changed)
-    clips    where Save clip puts its MP4s ("YouTube clips" unless changed)
+    stream   the stream folder: its pictures, slideshows and music ("Twitch stream" unless changed: not the YouTube
+             plugin's "stream", so the two never share pictures or music unless chosen to)
+    clips    where Save clip puts its MP4s ("Twitch clips" unless changed)
 
 Each folder can be changed to another one inside the save location (its Change…). Every folder is shown as people
 reach it on the network: \\server\share\folder\stream.
@@ -27,7 +28,7 @@ from .store import Store
 
 LOCATION_KEY = "save_location"  # {address, username, domain, version, folders: {stream, clips}}
 PASSWORD_KEY = "save_location_password"  # (never answered)
-FOLDERS = {"stream": ("Stream folder", "stream"), "clips": ("YouTube clips", "YouTube clips")}  # key: (label, default)
+FOLDERS = {"stream": ("Stream folder", "Twitch stream"), "clips": ("Twitch clips", "Twitch clips")}  # key: (label, default)
 MOUNT_POINT = Path(os.environ.get("STREAM_NAS_MOUNT", "/nas/save-location"))
 _lock = threading.Lock()
 _problem: dict = {"text": None}  # why the save location isn't mounted now, or None

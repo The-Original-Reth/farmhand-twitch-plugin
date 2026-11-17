@@ -1,7 +1,7 @@
 """
 A stand-in for Farmhand's plugin API (/plugin-api/v1), answering in exactly its shapes (docs/plugins.md): the token
-checked, permissions checked, 429 on demand, the farm's cameras, each printer's print, and stream:migrate's one-off
-hand-over. Copied from the Hello plugin's tests, with what the Stream plugin reads added. `down` makes it answer
+checked, permissions checked, 429 on demand, the farm's cameras and each printer's print. Copied from the Hello
+plugin's tests, with what the stream plugins read added. `down` makes it answer
 nothing at all, as a stopped Farmhand.
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN = "good-token"
-EVERYTHING = {"printers:read", "prints:read", "farm:read", "cameras:read", "stream:migrate"}
+EVERYTHING = {"printers:read", "prints:read", "farm:read", "cameras:read"}
 MJPEG = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_on_network_error", "1", "-reconnect_delay_max", "5",
          "-rw_timeout", "10000000", "-use_wallclock_as_timestamps", "1", "-f", "mpjpeg"]
 
@@ -41,14 +41,6 @@ class FakeFarmhand:
             2: {"printer_id": 2, "printer_name": "Core One", "error": None,
                 "cameras": [camera("Camera", "http://10.0.6.30/stream"), camera("Nozzle", "", error="Core One's Nozzle camera only plays in a browser (WebRTC).")]},
         }
-        self.migration = {
-            "settings": {"cols": 2, "rows": 1, "cells": [{"camera": "1:Bed"}, None], "title": "The farm", "border_color": "#FF8800"},
-            "layouts": [{"name": "Morning", "cols": 1, "rows": 1, "cells": [{"camera": "1:Bed"}]}],
-            "stream_key": "abcd-efgh-ijkl", "stream_folder": "/data/nas/farmhand/stream",
-            "youtube": {"client": {"client_id": "123-abc.apps.googleusercontent.com", "client_secret": "GOCSPX-secret"},
-                        "refresh_token": "1//refresh", "channel": "Print Farm", "stream_id": "own-stream"},
-        }
-        self.handed_over_at: str | None = None
         self.down = False  # True: nothing answers (Farmhand stopped)
         self.permissions = set(EVERYTHING)
         self.busy_for = 0  # the next this-many calls get 429
@@ -119,18 +111,9 @@ class FakeFarmhand:
             return self.send(h, 429, {"detail": "This plugin is asking Farmhand too often."}, {"Retry-After": "1"})
         path = h.path.removeprefix("/plugin-api/v1")
         if path == "/me":
-            return self.send(h, 200, {"plugin_id": "stream", "permissions": sorted(self.permissions), "api_version": "1"})
+            return self.send(h, 200, {"plugin_id": "twitch", "permissions": sorted(self.permissions), "api_version": "1"})
         if path == "/cameras":
             return self.allowed(h, "cameras:read") and self.send(h, 200, {"printers": list(self.cameras.values())})
-        if path == "/stream/migrate":
-            if not self.allowed(h, "stream:migrate"):
-                return True
-            if not post:
-                return self.send(h, 200, {"available": self.handed_over_at is None, "handed_over_at": self.handed_over_at, "has_settings": True})
-            if self.handed_over_at:
-                return self.send(h, 410, {"detail": "Farmhand already handed its Stream page set-up to this plugin, and hands it over only once."})
-            self.handed_over_at = "2026-11-11T10:00:00+00:00"
-            return self.send(h, 200, {**self.migration, "handed_over_at": self.handed_over_at})
         if path == "/printers":
             return self.allowed(h, "printers:read") and self.send(h, 200, {"printers": self.printers})
         if path.startswith("/printers/") and path.endswith("/print"):

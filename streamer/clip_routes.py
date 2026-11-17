@@ -1,7 +1,7 @@
 """
 Clips, saved as MP4s in the clips folder (live_stream/clips.py), from what's chosen on the page:
 
-- the stream: the last 1 second to 5 minutes of what went to YouTube, saved at once;
+- the stream: the last 1 second to 5 minutes of what went to Twitch, saved at once;
 - a camera (any Farmhand can see): the next 1 second to 5 minutes from it, recorded in the background.
 
     GET  /api/clips          {seconds, least, most, held, sources: [{key, label}], recording: [...], ended: [...],

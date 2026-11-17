@@ -1,5 +1,5 @@
 """
-What's chosen for the stream (kept in the plugin's store), checked on the way in: where to, the grid and its squares, taking turns, the resolution, the colours, the music and the YouTube title and description.
+What's chosen for the stream (kept in the plugin's store), checked on the way in: where to, the grid and its squares, taking turns, the resolution, the colours, the music and the Twitch extras.
 """
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from ..store import Store
 
 from .. import app_settings
 from .fonts import DEFAULT_FONT, FONTS
-from . import youtube_choices
+from . import twitch_choices
 from .constants import (CAMERA_KEY, COLOR, DEFAULT_BACKGROUND, DEFAULT_BORDER, DEFAULT_DESTINATION, DEFAULT_MUSIC_VOLUME,
-                        DEFAULT_RESOLUTION, DEFAULT_TEXT_COLOR, DELAY, DESCRIPTION_MAX, DESTINATIONS, HOLDING_DEFAULTS,
+                        DEFAULT_RESOLUTION, DEFAULT_TEXT_COLOR, DELAY, DESTINATIONS, HOLDING_DEFAULTS,
                         HOLDING_TEXT_MAX, KEY_SHAPE, LAYOUTS, MAX_CAMERAS, MAX_SIDE, RESOLUTIONS, SAVED, SECONDS,
-                        SETTINGS_KEY, STREAM_KEY_KEY, TITLE_MAX)
+                        SETTINGS_KEY, STREAM_KEY_KEY)
 from .squares import MAX_LAYERS, SLIDE_SECONDS, TEXT_MAX, _cell, _color, _named
 
 # the stream's own colours, as a refusal names them
@@ -95,16 +95,13 @@ def settings(db: Store) -> dict:
     resolution, border_color: "#RRGGBB", background: the stream's colour "#RRGGBB", font and color: the
     stream's words' (every square's and camera's unless it has its own), enabled: the Stream page's switch (off: nothing
     streams), music: the stream folder's music played, starting with the stream (on unless turned off; False: a silent
-    sound track), music_volume (0 to 100), music_shuffle: each round in a new order (False: in name order), title,
-    description, key_set, delay: seconds the stream is held before YouTube gets it (0 to 120), so a stall shorter than
-    that never reaches it, youtube: the video's own YouTube settings (youtube_choices.kept: privacy, tags, category, made_for_kids,
-    latency, dvr, auto_start, auto_stop), key_from_youtube: Farmhand has a stream of its own on the channel, so its key
-    comes from YouTube}.
+    sound track), music_volume (0 to 100), music_shuffle: each round in a new order (False: in name order), key_set,
+    delay: seconds the stream is held before Twitch gets it (0 to 120), so a stall shorter than that never reaches it,
+    twitch: the Twitch extras (twitch_choices.kept), twitch_extras_ready: whether they can be turned on yet}.
     The key itself is never given. Settings from before the grid (a list of cameras) come back as the grid they made.
     """
     raw = _saved(db)
     destination = raw.get("destination") if raw.get("destination") in DESTINATIONS else DEFAULT_DESTINATION
-    text = lambda name: raw.get(name) if isinstance(raw.get(name), str) else ""  # noqa: E731
     if isinstance(raw.get("cells"), list) and _side(raw.get("cols")) and _side(raw.get("rows")):
         cols, rows = raw["cols"], raw["rows"]
         cells = [_cell(c) for c in raw["cells"][: cols * rows]]
@@ -133,12 +130,10 @@ def settings(db: Store) -> dict:
         "music_volume": raw["music_volume"] if _volume(raw.get("music_volume")) else DEFAULT_MUSIC_VOLUME,
         "music_shuffle": raw.get("music_shuffle", True) is not False,
         "delay": raw["delay"] if type(raw.get("delay")) is int and DELAY[0] <= raw["delay"] <= DELAY[1] else DELAY[2],
-        "youtube": youtube_choices.kept(raw.get("youtube")),
+        "twitch": twitch_choices.kept(raw.get("twitch")),
+        "twitch_extras_ready": twitch_choices.EXTRAS_READY,
         "holding": _holding(raw.get("holding")),
-        "title": text("title"),
-        "description": text("description"),
         "key_set": bool(app_settings.get(db, STREAM_KEY_KEY)),
-        "key_from_youtube": bool(app_settings.get(db, "youtube_stream_id")),
     }
 
 
@@ -194,8 +189,8 @@ def check_cells(db: Store, cols, rows, cells) -> list[dict | None]:
 
 def save(db: Store, *, destination=None, chosen=None, show_status=None, stream_key=None, clear_key=False, layout=None,
          resolution=None, border_color=None, background=None, font=None, color=None, enabled=None, cols=None, rows=None, cells=None,
-         seconds_all=None, seconds_each=None, title=None, description=None, music=None, music_volume=None, music_shuffle=None,
-         delay=None, youtube=None, holding=None) -> dict:
+         seconds_all=None, seconds_each=None, music=None, music_volume=None, music_shuffle=None,
+         delay=None, twitch=None, holding=None) -> dict:
     """
     Change what's given (None: left as it is). The grid comes as cols, rows and cells together; or `chosen`, a list of
     cameras, which makes a grid just big enough for them, in that order. Anything that can't be
@@ -204,7 +199,7 @@ def save(db: Store, *, destination=None, chosen=None, show_status=None, stream_k
     now = settings(db)
     if destination is not None:
         if destination not in DESTINATIONS:
-            raise ValueError("Farmhand streams to YouTube Live for now.")
+            raise ValueError("This plugin streams to Twitch only.")
         now["destination"] = destination
     if cells is not None or cols is not None or rows is not None:
         now["cells"] = check_cells(db, cols if cols is not None else now["cols"], rows if rows is not None else now["rows"],
@@ -229,8 +224,8 @@ def save(db: Store, *, destination=None, chosen=None, show_status=None, stream_k
     for name, value in (("show_status", show_status), ("enabled", enabled), ("music", music), ("music_shuffle", music_shuffle)):
         if value is not None:
             now[name] = bool(value)
-    if youtube is not None:
-        now["youtube"] = youtube_choices.checked(youtube, now["youtube"])
+    if twitch is not None:
+        now["twitch"] = twitch_choices.checked(twitch, now["twitch"])
     if holding is not None:
         now["holding"] = _check_holding(holding, now["holding"])
     if delay is not None:
@@ -247,7 +242,7 @@ def save(db: Store, *, destination=None, chosen=None, show_status=None, stream_k
         now["font"] = font
     if resolution is not None:
         if resolution not in RESOLUTIONS:
-            raise ValueError("Choose 720p, 1080p or 2K.")
+            raise ValueError("Choose 720p or 1080p.")
         now["resolution"] = resolution
     if layout is not None:
         if layout not in LAYOUTS:
@@ -260,16 +255,12 @@ def save(db: Store, *, destination=None, chosen=None, show_status=None, stream_k
                 what = "showing the whole grid" if name == "seconds_all" else "each camera"
                 raise ValueError(f"The time for {what} has to be from {least} to {most} seconds.")
             now[name] = value
-    if title is not None:
-        now["title"] = youtube_choices.text(title, TITLE_MAX, "title")
-    if description is not None:
-        now["description"] = youtube_choices.text(description, DESCRIPTION_MAX, "description")
     if clear_key:
         app_settings.put(db, STREAM_KEY_KEY, None)
     elif stream_key is not None and stream_key.strip():
         key = stream_key.strip()
         if not KEY_SHAPE.match(key):
-            raise ValueError("That doesn't look like a stream key. Copy it again from YouTube Studio (Go live → Stream → Stream key).")
+            raise ValueError("That doesn't look like a stream key. Copy it again from Twitch (Creator Dashboard → Settings → Stream → Primary Stream key).")
         app_settings.put(db, STREAM_KEY_KEY, key)
     app_settings.put(db, SETTINGS_KEY, json.dumps({k: now[k] for k in SAVED}))
     db.commit()

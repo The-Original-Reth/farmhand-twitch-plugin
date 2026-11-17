@@ -14,7 +14,7 @@ import urllib.request
 from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from PIL import Image
 
-from . import farm, layouts, live_stream, migrate
+from . import farm, layouts, live_stream
 from .errors import answer_errors
 from .live_stream import procs
 from .live_stream.sources import followed_camera, known
@@ -180,16 +180,3 @@ def put_layouts(payload: dict = Body(...), db: Store = Depends(get_db)):
     """Keep these as the saved layouts: {layouts: [...]}."""
     with answer_errors():
         return {"layouts": layouts.save(db, payload.get("layouts"))}
-
-
-@router.get("/api/migrate")
-def migration_state(db: Store = Depends(get_db)):
-    """{done: {at, stream_folder} | null, own_settings}: whether Farmhand's Stream page set-up was brought over."""
-    return migrate.state(db)
-
-
-@router.post("/api/migrate")
-def migrate_now(payload: dict = Body(default={}), db: Store = Depends(get_db)):
-    """Bring Farmhand's Stream page set-up over now (once; over settings made here only with replace: true)."""
-    with answer_errors():
-        return migrate.run(db, replace=bool((payload or {}).get("replace")))

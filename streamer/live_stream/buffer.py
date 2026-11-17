@@ -20,7 +20,7 @@ PTS_WRAP = (1 << 33) / 90000  # seconds after which an MPEG-TS time starts again
 class Buffer:
     """The stream's delay: the finished video and sound held for `delay` seconds before any of it goes to the sender, which
     then plays it out at its own real-time pace (-re) from the front. A stall shorter than the delay (a camera's hiccup,
-    a moment the processor fell behind, a layout's hand-over) never reaches YouTube. The relay writes into it; the sender
+    a moment the processor fell behind, a layout's hand-over) never reaches Twitch. The relay writes into it; the sender
     is given to it with set_sink (again whenever it's started again).
 
     What's held is counted by the stream's own times: each piece keeps how much stream it adds (its last frame's time
@@ -38,11 +38,11 @@ class Buffer:
         self._first: float | None = None
         self._ended = False
         self._filler = None  # while filling: what the sender is given meanwhile (the holding screen's ffmpeg), or None
-        self.sent = sent  # told each piece the sender has taken (what YouTube is given: kept for clips, clips.py), or None
+        self.sent = sent  # told each piece the sender has taken (what Twitch is given: kept for clips, clips.py), or None
         threading.Thread(target=self._feed, name="stream-buffer", daemon=True).start()
 
     def fill_from(self, proc) -> None:
-        """While the delay fills, give the sender `proc`'s stream (the holding screen: MPEG-TS on its stdout) so YouTube
+        """While the delay fills, give the sender `proc`'s stream (the holding screen: MPEG-TS on its stdout) so Twitch
         has video meanwhile; once the delay is held it's switched to what's held, at a whole frame, and `proc` is
         ended (terminate())."""
         with self._cond:
@@ -56,7 +56,7 @@ class Buffer:
         """After a stall has used the delay up while live (the self-check started the picture again): the delay is
         collected afresh, as when going live after a restart, with `proc`'s stream (the holding screen) going to the
         sender meanwhile. Without this, once used up the delay stayed used up for the rest of the time live, and the
-        next hiccup went straight to YouTube. False (and `proc` ended) when it's already filling, or ended."""
+        next hiccup went straight to Twitch. False (and `proc` ended) when it's already filling, or ended."""
         with self._cond:
             if not self._started or self._ended:
                 ok = False
@@ -137,7 +137,7 @@ class Buffer:
 
     def held(self) -> float:
         """
-        How many seconds of stream are held now: how far behind the picture YouTube gets is (0 before the first). By the
+        How many seconds of stream are held now: how far behind the picture Twitch gets is (0 before the first). By the
         stream's own times, not by when it came: a picture that stopped for a moment and then made up the time it lost
         holds as much stream as before, though none of it came in that moment. (By when it came for a stream with no
         times in it.)
@@ -161,7 +161,7 @@ class Buffer:
         return waited >= self.delay + FILL_MOST or (waited >= self.delay and self._held() >= self.delay)
 
     def filling(self) -> bool:
-        """Still collecting the delay, before anything has gone to YouTube."""
+        """Still collecting the delay, before anything has gone to Twitch."""
         with self._cond:
             return not self._started
 

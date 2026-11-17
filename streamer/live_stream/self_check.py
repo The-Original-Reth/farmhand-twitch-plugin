@@ -13,9 +13,9 @@ from . import procs
 from .relay import Relay
 
 # The self-check: while live, how much video the picture has passed on is looked at every CHECK_EVERY seconds. Less than
-# ENOUGH of STALL seconds' worth in the last STALL seconds means YouTube is (or soon will be, once the delay runs out)
+# ENOUGH of STALL seconds' worth in the last STALL seconds means Twitch is (or soon will be, once the delay runs out)
 # getting next to nothing: the picture stopped giving video, or gives it far slower than it plays. The picture is then
-# started again, and if that doesn't help within another STALL, the connection to YouTube too.
+# started again, and if that doesn't help within another STALL, the connection to Twitch too.
 CHECK_EVERY = 5
 STALL = 60
 ENOUGH = 0.5
@@ -27,7 +27,7 @@ class SelfCheckMixin:
     def _watch_flow(self, gen: int, relay: Relay) -> None:
         """The self-check, for as long as this time live lasts (see CHECK_EVERY): a stream left running day and night
         mends itself when next to no video has come through for STALL seconds, first by starting the picture again (its
-        cameras' pipes opened afresh), then, if that didn't help, the connection to YouTube as well."""
+        cameras' pipes opened afresh), then, if that didn't help, the connection to Twitch as well."""
         seen = collections.deque()  # (when, the time of the last frame passed on then)
         tried_picture = False
         while self._wait(gen, CHECK_EVERY):
@@ -49,10 +49,10 @@ class SelfCheckMixin:
                     return
                 picture, warming = self._proc, self._warming
                 sender = self._sender if tried_picture else None
-                what = ("the picture and the connection to YouTube were started again" if sender
+                what = ("the picture and the connection to Twitch were started again" if sender
                         else "the picture was started again")
                 self._healed = {"at": datetime.now(timezone.utc).isoformat(),
-                                "message": f"Next to nothing was reaching YouTube for {STALL} seconds, so {what}."}
+                                "message": f"Next to nothing was reaching Twitch for {STALL} seconds, so {what}."}
             for proc in (warming, picture, sender):
                 procs.end(proc)  # (each is started again by its own loop)
             tried_picture = True
@@ -61,4 +61,4 @@ class SelfCheckMixin:
                 with self._lock:
                     if self._current(gen) and self._healed:
                         self._healed["message"] = self._healed["message"].rstrip(".") + (
-                            "; the holding screen is on YouTube while the delay fills again.")
+                            "; the holding screen is on Twitch while the delay fills again.")

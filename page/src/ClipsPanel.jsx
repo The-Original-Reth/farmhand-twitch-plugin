@@ -5,8 +5,8 @@ import { clipUrl, errorText, getClips, takeClip } from "./api.js";
 import { ClipLength, length } from "./ClipLength.jsx";
 import { timeZone } from "./api/client.js";
 
-// Clips, saved as MP4s in the clips folder (the NAS's "YouTube clips"), from what's chosen in the drop-down: Stream
-// (the last stretch of what went to YouTube, saved at once) or any camera Farmhand can see (the next stretch from it,
+// Clips, saved as MP4s in the clips folder (the NAS's "Twitch clips"), from what's chosen in the drop-down: Stream
+// (the last stretch of what went to Twitch, saved at once) or any camera Farmhand can see (the next stretch from it,
 // recorded in the background: the panel says while it is, and how it ended). The length is typed in here (1 s to
 // 5 min) and kept by the plugin.
 const size = (bytes) => (bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} kB`);
@@ -60,7 +60,7 @@ export function ClipsPanel() {
       <div style={uiText(13, c.heading, { fontWeight: 600 })}>Clips</div>
       <div style={uiText(12, c.textMuted, { lineHeight: 1.5 })}>
         Save a clip as a video file, in <span style={{ color: c.textPrimary }}>{where}</span>: the last stretch of the stream as it
-        went to YouTube, or the next stretch from any camera.
+        went to Twitch, or the next stretch from any camera.
       </div>
       <label style={uiText(12, c.textMuted, { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" })}>
         Clip
@@ -86,13 +86,13 @@ export function ClipsPanel() {
           onClick={take}
           disabled={blocked}
           style={primaryButton(blocked)}
-          title={problem || (nothing ? "Go live first: a clip of the stream is taken from what has gone to YouTube"
+          title={problem || (nothing ? "Go live first: a clip of the stream is taken from what has gone to Twitch"
             : already ? `${chosen.label} is being recorded already`
-            : stream ? `Save the last ${length(shown)} that went to YouTube` : `Record the next ${length(shown)} from ${chosen.label}`)}
+            : stream ? `Save the last ${length(shown)} that went to Twitch` : `Record the next ${length(shown)} from ${chosen.label}`)}
         >
           {busy ? (stream ? "Saving the clip…" : "Starting…") : stream ? `Save clip (last ${length(shown)})` : `Record clip (next ${length(shown)})`}
         </button>
-        {!problem && nothing && <span style={uiText(12, c.textFaint)}>Nothing has gone to YouTube yet.</span>}
+        {!problem && nothing && <span style={uiText(12, c.textFaint)}>Nothing has gone to Twitch yet.</span>}
         {!problem && stream && !nothing && clips.held < shown && (
           <span style={uiText(12, c.textFaint)}>Only {length(Math.floor(clips.held))} has gone out so far: the clip is that long.</span>
         )}

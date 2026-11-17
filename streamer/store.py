@@ -1,9 +1,8 @@
 """
-The plugin's own settings: <STREAM_DATA>/settings.json, a file in its own volume, with no database. It holds what
-Farmhand's app_settings table held for the Stream page, under the same keys (live_stream, live_stream_key,
-youtube_client, youtube_refresh_token, youtube_channel, youtube_stream_id), plus the saved layouts, the cameras last
-heard of and what was last live. The file is readable only by the plugin (mode 600): the stream key and the YouTube
-sign-in are in it, and the plugin's API never answers them.
+The plugin's own settings: <STREAM_DATA>/settings.json, a file in its own volume, with no database. It holds the
+stream's settings (live_stream) and the Twitch stream key (live_stream_key), plus the saved layouts, the cameras last
+heard of and what was last live. The file is readable only by the plugin (mode 600): the stream key is in it, and the
+plugin's API never answers it.
 
 The engine code copied from Farmhand takes a `db` everywhere: here that is the Store (its type is still called
 Store in those files, so they differ from Farmhand's as little as possible). put() changes it in memory; commit()

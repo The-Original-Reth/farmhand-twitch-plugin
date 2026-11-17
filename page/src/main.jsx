@@ -7,14 +7,13 @@ import { errorText, getLayouts, saveLayouts } from "./api.js";
 import { FarmProvider, useData } from "./data.jsx";
 import { PluginPanel } from "./PluginPanel.jsx";
 import { StreamSection } from "./stream/StreamSection.jsx";
-import { YouTubeGuide } from "./stream/YouTubeGuide.jsx";
-import { YouTubeSettingsWindow } from "./stream/YouTubeSettings.jsx";
+import { TwitchSettingsWindow } from "./stream/TwitchSettings.jsx";
 import { SettingsView } from "./SettingsView.jsx";
 
-// The Stream plugin's page: Farmhand's Stream page, served by the plugin and shown inside Farmhand at /plugins/stream/.
+// The Twitch plugin's page: the Stream page, served by the plugin and shown inside Farmhand at /plugins/twitch/.
 // It takes Farmhand's colours and font through Farmhand's helper (farmhand-plugin.js), changing the theme in place as
-// Farmhand's own pages do (theme.js), and draws again when they change. Pages of their own, opened in a new tab or
-// window: ?view=youtube-guide (connecting to a YouTube channel) and ?view=youtube-settings. And ?view=settings: where it
+// Farmhand's own pages do (theme.js), and draws again when they change. A page of its own, opened in a window:
+// ?view=twitch-settings (the stream key and the Twitch extras). And ?view=settings: where it
 // saves and how long a clip is, shown on Farmhand's Settings page under the plugin's name (the manifest's settings_page).
 
 function useFarmhandTheme() {
@@ -49,7 +48,7 @@ function StreamPage() {
       {problem && <div style={{ ...ui, color: c.danger, fontSize: 13, marginBottom: 10 }}>Couldn't load the saved layouts: {problem}</div>}
       <StreamSection
         layouts={layouts} onSaveLayouts={onSaveLayouts} onSlideshowRenamed={reload}
-        aside={(page) => <PluginPanel page={page} farmhandError={farmhandError} onMigrated={() => window.location.reload()} />}
+        aside={(page) => <PluginPanel page={page} farmhandError={farmhandError} />}
       />
     </div>
   );
@@ -58,8 +57,7 @@ function StreamPage() {
 function Root() {
   useFarmhandTheme();
   const view = new URLSearchParams(window.location.search).get("view");
-  if (view === "youtube-guide") return <YouTubeGuide />;
-  if (view === "youtube-settings") return <YouTubeSettingsWindow />;
+  if (view === "twitch-settings") return <TwitchSettingsWindow />;
   if (view === "settings") return <SettingsView />; // (shown on Farmhand's Settings page, under the plugin's name)
   return (
     <FarmProvider>

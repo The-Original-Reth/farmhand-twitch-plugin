@@ -35,7 +35,7 @@ class LocationIn(BaseModel):
 
 
 class FolderIn(BaseModel):
-    path: str = Field(max_length=300)  # inside the save location, like "stream" or "Farmhand/YouTube clips"
+    path: str = Field(max_length=300)  # inside the save location, like "Twitch stream" or "Farmhand/Twitch clips"
 
 
 class NewFolderIn(BaseModel):

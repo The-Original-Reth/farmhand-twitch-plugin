@@ -1,9 +1,9 @@
 """
-The stream itself, while it's meant to be live: the one connection to YouTube (the sender) and the delay's buffer
+The stream itself, while it's meant to be live: the one connection to Twitch (the sender) and the delay's buffer
 before it, kept for as long as it's live; each camera read by its own feeder (feeders.py), kept for as long as it's
 live; the picture ffmpeg making the picture from the feeders' steady pipes, handed over to a new one when the layout
-changes (relay.py) with no break in what YouTube gets; the words on the cameras kept current from Farmhand (just the
-printer's name while Farmhand doesn't answer); and the YouTube title set once the broadcast is there.
+changes (relay.py) with no break in what Twitch gets; and the words on the cameras kept current from Farmhand (just
+the printer's name while Farmhand doesn't answer).
 
 Going live is remembered in the plugin's store (LIVE_KEY), and cleared only by Stop (or the switch turned off), so after
 the plugin's own restart it goes live again by itself (resume()).
@@ -19,13 +19,12 @@ import time
 from datetime import datetime, timezone
 
 from ..store import Store, store
-from .. import app_settings, config, farm, stream_media, youtube_live
+from .. import app_settings, config, farm, stream_media
 from . import clips, feeders, holding, layout_picture, music, procs
 from .cameras import CamerasMixin
 from .pictures import PicturesMixin
 from .self_check import SelfCheckMixin
 from .sending import SendingMixin
-from .broadcast import Broadcast, own_stream, title_on_active
 from .constants import DEFAULT_RESOLUTION, DESTINATIONS, KEPT_LINES, RESOLUTIONS, STREAM_KEY_KEY
 from .choices import settings
 from .encoders import encoder
@@ -41,8 +40,8 @@ TRYING_FOR = 20  # seconds a volume tried on the page (try_volume) lasts without
 
 class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
     """The one live stream: started with go_live (which, while live, hands over to the new layout), ended with stop.
-    Its threads keep the sender and the picture ffmpeg running, the words on the video current, and set the YouTube
-    title once the broadcast is there, while it's meant to be live."""
+    Its threads keep the sender and the picture ffmpeg running and the words on the video current, while it's meant
+    to be live."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -50,7 +49,7 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
         self._run_started: float | None = None  # when the picture ffmpeg going out started (monotonic)
         self._wanted = threading.Event()
         self._proc = None  # the picture ffmpeg going out
-        self._sender = None  # the ffmpeg holding the connection to YouTube
+        self._sender = None  # the ffmpeg holding the connection to Twitch
         self._relay: Relay | None = None
         self._buffer: Buffer | None = None
         self._url: str | None = None
@@ -64,15 +63,13 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
         self._dir: str | None = None  # the folder of the picture going out (or coming in)
         self._generation = 0  # one per time live (a stop, or going live afresh, moves it on)
         self._picture = 0  # one per layout while live (a hand-over moves it on)
-        self._title: dict | None = None  # setting the YouTube title: {state: "waiting" | "done" | "failed", message}
         self._player: music.Player | None = None  # the music, while live
         self._trying: tuple[int, float] | None = None  # a volume being tried on the page, not saved: (volume, until when)
         self._warming = None  # a new layout's picture ffmpeg, warming up beside the one going out
         self._changing = False  # a new layout is on its way (settling, or warming up)
         self._cache: str | None = None  # slideshow screens put together this time live, reused by later layouts
-        self._broadcast: Broadcast | None = None  # signed in: this time live's broadcast on YouTube
         self._healed: dict | None = None  # what the self-check last did this time live (_watch_flow)
-        # the resolution chosen when going live: kept until Stop (YouTube takes a change of size mid-stream badly, so a
+        # the resolution chosen when going live: kept until Stop (Twitch takes a change of size mid-stream badly, so a
         # new one saved while live waits for the next Go live)
         self._resolution: str | None = None
         self._feeders: dict[str, feeders.Feeder] = {}  # each camera's feeder this time live, by its key
@@ -97,7 +94,6 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
                 # while it still doesn't: once it answers the plugin again (a camera list, a print), the note goes
                 "farmhand": self._farmhand_note if wanted and farm.problem() else None,
                 "error": self._error,
-                "title": dict(self._title) if self._title else None,
                 "encoder": self._encoder,  # "nvenc" (an NVIDIA card) or "cpu", while live; None otherwise
                 "resolution": self._resolution if wanted else None,  # the size going out (set when it went live)
                 # how long the picture going out has run, in seconds (None while it isn't going out)
@@ -106,8 +102,8 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
                 "server_time": round(time.time(), 3),
                 # the music while live: {on, playing, track (its file name, None before the first), at (seconds into it)}
                 "music": self._player.status() if self._player and wanted else None,
-                # the delay before YouTube, while live: {seconds (as chosen), held (seconds of stream held now), filling
-                # (still collecting it: nothing has gone to YouTube yet)}
+                # the delay before Twitch, while live: {seconds (as chosen), held (seconds of stream held now), filling
+                # (still collecting it: nothing has gone to Twitch yet)}
                 "delay": {"seconds": buffer.delay, "held": buffer.held(), "filling": buffer.filling()} if buffer and wanted else None,
                 # the holding screen is going out (after the plugin's own restart, while the delay fills again)
                 "holding": bool(buffer and wanted and buffer.filled_from() is not None),
@@ -115,19 +111,7 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
                 "changing": self._changing and wanted,
                 # what the self-check last did this time live, {at (ISO time), message}, or None
                 "self_check": dict(self._healed) if wanted and self._healed else None,
-                # signed in: this time live's broadcast on YouTube {watch_url, studio_url, state, health, issues, viewers}
-                "youtube": self._broadcast.status() if wanted and self._broadcast else None,
             }
-
-    def update_broadcast(self, chosen: dict) -> bool:
-        """The video's settings changed while live (title, description, tags, category, privacy...): changed on the
-        broadcast going out straight away. False when there's none of Farmhand's own (a pasted key)."""
-        with self._lock:
-            b = self._broadcast if self._wanted.is_set() else None
-        if not b:
-            return False
-        self.title_set(b.update(chosen))
-        return True
 
     def music_settings(self, chosen: dict) -> None:
         """The music's choices changed while live: the music follows straight away, no new ffmpeg. (A volume being tried
@@ -177,17 +161,16 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
 
     def go_live(self, db: Store, session_factory, resumed: bool = False) -> dict:
         """Go live with what's chosen now; while live already (to the same place), hand over to it with no break in what
-        YouTube gets. `resumed`: going live again after the plugin's own restart (the holding screen goes out while the
-        delay fills, so the broadcast never goes without video). ValueError says why it can't."""
+        Twitch gets. `resumed`: going live again after the plugin's own restart (the holding screen goes out while the
+        delay fills, so the channel never goes without video). ValueError says why it can't."""
         chosen = settings(db)
         if not chosen["enabled"]:
             raise ValueError("The stream is turned off: turn it on at the top of the Stream page first.")
         where = DESTINATIONS[chosen["destination"]]
-        test = config.settings.test_destination  # trying the plugin out: there instead of YouTube, which is never asked
-        creds = youtube_live.credentials(db) if chosen["destination"] == "youtube" and not test else None
+        test = config.settings.test_destination  # trying the plugin out: there instead of Twitch
         key = app_settings.get(db, STREAM_KEY_KEY)
-        if not key and not creds:
-            raise ValueError(f"Sign in to YouTube, or add your {where['label']} stream key, first (YouTube settings).")
+        if not key:
+            raise ValueError(f"Add your {where['label']} stream key first (Twitch settings).")
         if not chosen["cameras"]:
             raise ValueError("Put at least one camera in the grid.")
         ffmpeg = procs.ffmpeg_path()
@@ -195,15 +178,12 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
             raise ValueError("ffmpeg isn't installed in the Stream plugin's container, so it can't stream. Rebuild its image.")
         known, note = farm.cameras(db)  # (Farmhand not answering: the addresses last heard of)
         srcs = sources(db, chosen["cameras"], known)
-        own = own_stream(db, creds) if creds else None  # signed in: Farmhand's own stream on the channel
-        if own:
-            key = own["key"]
-        url = f"{test}/{key}" if test else (own["url"] if own else where["url"]) + key
+        url = f"{test}/{key}" if test else where["url"] + key
         with self._lock:
             sender = self._sender
             handover = self._wanted.is_set() and self._url == url and sender is not None and sender.poll() is None
         if not handover:
-            self._start_session(db, session_factory, chosen, ffmpeg, url, key, creds if own else None, own, resumed=resumed)
+            self._start_session(db, session_factory, chosen, ffmpeg, url, key, resumed=resumed)
         elif self._player:
             self.music_settings(chosen)
 
@@ -255,14 +235,9 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
             threading.Thread(target=run, name="stream-resume", daemon=True).start()
 
     def _start_session(self, db: Store, session_factory, chosen: dict, ffmpeg: str, url: str, key: str,
-                       creds: dict | None = None, own: dict | None = None, resumed: bool = False) -> None:
-        """Going live afresh: signed in, a new broadcast on the channel first (bound to Farmhand's own stream `own`, set
-        from the YouTube settings; it starts by itself when the stream arrives); then the sender (the connection to
-        YouTube), the delay's buffer and the music. With a pasted key instead, YouTube makes the broadcast itself and
-        Farmhand can't set its title."""
+                       resumed: bool = False) -> None:
+        """Going live afresh: the sender (the connection to Twitch), the delay's buffer and the music."""
         self.stop(forget=False)
-        broadcast = Broadcast.start(creds, own, chosen) if own else None
-        wants_title = not own and chosen["destination"] == "youtube" and (chosen["title"] or chosen["description"])
 
         def tracks() -> list[str]:  # read again each round of the music, so tracks added while live join in
             with session_factory() as s:
@@ -270,7 +245,7 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
 
         # the music starts with the stream (when it's on and there are tracks; silence otherwise)
         player = music.Player(ffmpeg, tracks, on=chosen["music"], shuffle=chosen["music_shuffle"], volume=chosen["music_volume"])
-        buffer = Buffer(chosen["delay"], sent=clips.recent.add)  # (what goes to YouTube, kept for clips)
+        buffer = Buffer(chosen["delay"], sent=clips.recent.add)  # (what goes to Twitch, kept for clips)
         with self._lock:
             self._generation += 1
             gen = self._generation
@@ -286,28 +261,15 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
             self._relay = Relay(buffer)
             self._cache = tempfile.mkdtemp(prefix="farmhand-stream-slides-")
             self._player = player
-            self._title = None
-            if broadcast:
-                self._title = Broadcast.made_message(chosen)
-            elif wants_title:
-                self._title = {"state": "failed", "message": "Sign in to YouTube (YouTube settings) for Farmhand to set the title and description."}
-            self._broadcast = broadcast
             self._healed = None
             self._wanted.set()
         if resumed and buffer.delay > 0:
             self._hold(db, chosen, ffmpeg, buffer, player)
         threading.Thread(target=self._keep_sending, args=(gen, sender_command(ffmpeg, url), buffer), name="stream-sender", daemon=True).start()
         threading.Thread(target=self._watch_flow, args=(gen, self._relay), name="stream-self-check", daemon=True).start()
-        if broadcast:
-            def read_settings() -> dict:
-                with session_factory() as s:
-                    return settings(s)
-
-            threading.Thread(target=broadcast.watch, name="stream-youtube", daemon=True, args=(
-                buffer.delay, lambda seconds: self._wait(gen, seconds), read_settings, lambda said: self._said_by_youtube(gen, said))).start()
 
     def _hold(self, db: Store, chosen: dict, ffmpeg: str, buffer: Buffer, player) -> None:
-        """After the plugin's own restart: the holding screen to YouTube straight away, while the delay fills again
+        """After the plugin's own restart: the holding screen to Twitch straight away, while the delay fills again
         behind it (holding.py). Best tried: without it the stream still goes live, as from Go live."""
         proc = self._holding(db, chosen, ffmpeg, player)
         if proc is not None:
@@ -327,7 +289,7 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
 
     def _refill(self, gen: int) -> bool:
         """The self-check started the picture again after a stall that used the delay up (less than half of it held):
-        the holding screen goes to YouTube while the delay is collected afresh behind it, so the next hiccup is hidden
+        the holding screen goes to Twitch while the delay is collected afresh behind it, so the next hiccup is hidden
         again. True when it is; False (nothing changed) when the delay wasn't used up, or the holding screen couldn't
         be shown."""
         with self._lock:
@@ -345,10 +307,9 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
         proc = self._holding(db, chosen, ffmpeg, player)
         return proc is not None and buffer.refill(proc)
 
-    def stop(self, forget: bool = True, end_broadcast: bool = True) -> dict:
+    def stop(self, forget: bool = True) -> dict:
         """Stop the stream. `forget`: Stop pressed (it won't go live again after a restart); False when the plugin is
-        only shutting down, or going live afresh. `end_broadcast`: end the broadcast on YouTube too; False when the
-        plugin is only shutting down (a new image, a reboot): it carries on with that broadcast when it's back."""
+        only shutting down, or going live afresh."""
         if forget:
             s = store()
             s.put(LIVE_KEY, None)
@@ -367,9 +328,7 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
             self._encoder = None
             self._resolution = None
             self._run_started = None
-            self._title = None
             player, self._player = self._player, None
-            broadcast, self._broadcast = self._broadcast, None
             warming, self._warming = self._warming, None
             cache, self._cache = self._cache, None
             fed, self._feeders = self._feeders, {}
@@ -382,10 +341,6 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
         procs.end(warming)
         if cache:
             shutil.rmtree(cache, ignore_errors=True)
-        if broadcast and end_broadcast:  # ended on YouTube (it becomes the channel's saved video)
-            broadcast.end()
-        elif broadcast:
-            broadcast.ended = True  # (left live on YouTube; nothing more is asked of it here)
         if buffer:
             buffer.close()
         for p in (proc, sender):
@@ -393,30 +348,6 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
         if folder:
             shutil.rmtree(folder, ignore_errors=True)
         return self.status()
-
-    def send_to_youtube(self, db: Store, chosen: dict, text_changed: bool = True, asked: bool = False) -> None:
-        """The YouTube settings (`chosen`) saved while live: onto Farmhand's own broadcast, all of them; live on a pasted
-        key, just the title and description, on the broadcast YouTube made (when they changed, or `asked`: the page's
-        button). Asked, ValueError says why it can't be tried; otherwise that's left quietly. status.title says how
-        it went."""
-        if config.settings.test_destination:  # (being tried out: YouTube is never sent anything)
-            return
-        if self.update_broadcast(chosen) or not text_changed:
-            return
-        if not asked and not (youtube_live.credentials(db) and (chosen["title"] or chosen["description"])):
-            return
-        self.title_set(title_on_active(db, chosen))
-
-    def _said_by_youtube(self, gen: int, outcome: dict) -> None:
-        with self._lock:
-            if self._current(gen):
-                self._title = outcome
-
-    def title_set(self, outcome: dict) -> None:
-        """What setting the YouTube title came to, when done from the page while live."""
-        with self._lock:
-            if self._wanted.is_set():
-                self._title = outcome
 
     def _current(self, gen: int, picture: int | None = None) -> bool:
         return self._wanted.is_set() and self._generation == gen and (picture is None or self._picture == picture)

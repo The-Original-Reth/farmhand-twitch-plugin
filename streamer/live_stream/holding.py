@@ -1,7 +1,7 @@
 """
-The holding screen: what YouTube is shown right after the plugin's own restart (a new image, a reboot), while the delay
-fills again behind it. Without it YouTube would get no video for the restart and the whole delay, and with auto-stop on
-it ends a broadcast left that long without any; with it the broadcast carries on, and once the delay is held YouTube is
+The holding screen: what Twitch is shown right after the plugin's own restart (a new image, a reboot), while the delay
+fills again behind it. Without it Twitch would get no video for the restart and the whole delay, and the channel would
+go offline (its viewers gone); with it the channel carries on, and once the delay is held Twitch is
 switched to the live picture (buffer.Buffer.fill_from), the whole delay in place.
 
 It's one picture, drawn here with Pillow at the stream's size: its colour, its picture (from the stream folder's images)

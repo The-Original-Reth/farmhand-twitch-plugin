@@ -8,18 +8,18 @@ the operator once when they add it on Farmhand's Plugins page:
 The rest are this plugin's own:
 
     PORT                     where it listens (8080, as farmhand-plugin.json says)
-    STREAM_DATA              its own settings, stream key, YouTube sign-in, saved layouts and what was last live:
+    STREAM_DATA              its own settings, stream key, saved layouts and what was last live:
                              /data, a Docker volume of its own, so they outlive the container
     STREAM_FOLDER            the stream folder (pictures, slideshows, music): /media, a folder the operator mounts in
                              (a bind mount, or a NAS share mounted on the plugin's machine)
     STREAM_FOLDER_SHOWN_AS   optional: the same folder as people reach it over the network (a Windows share path,
                              say), shown on the page so they know where to copy pictures and music in by hand
     STREAM_CLIPS             the clips folder, where Save clip writes MP4s: /clips, a folder the operator mounts in
-                             (the NAS's "YouTube clips" folder, beside the stream folder)
+                             (the NAS's "Twitch clips" folder, beside the stream folder)
     STREAM_CLIPS_SHOWN_AS    optional: the clips folder as people reach it over the network, shown on the page
     STREAM_TEST_DESTINATION  optional, for trying the plugin out: an rtmp:// address that takes the stream instead
-                             of YouTube (the stream key pasted on the page goes on its end). While it's set, YouTube
-                             is never sent anything, signed in or not
+                             of Twitch (the stream key pasted on the page goes on its end). While it's set, Twitch
+                             is never sent anything
     FARMHAND_STREAM_ENCODER  auto (the default: an NVIDIA card's encoder when one works, else the processor),
                              nvenc or cpu
 """

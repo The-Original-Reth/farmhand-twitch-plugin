@@ -1,4 +1,4 @@
-# The YouTube Stream plugin: build with  docker build -t farmhand-stream .
+# The Twitch Stream plugin: build with  docker build -t farmhand-twitch .
 # Its page is a small Vite build (page/), made in the first stage; the plugin itself is Python with ffmpeg and fonts.
 FROM node:22-alpine AS page
 WORKDIR /page
@@ -32,7 +32,7 @@ ENV PORT=8080 \
     STREAM_DATA=/data \
     STREAM_FOLDER=/media \
     PYTHONUNBUFFERED=1
-# Its settings, stream key, YouTube sign-in and layouts: a volume of its own, so they outlive the container
+# Its settings, Twitch stream key and layouts: a volume of its own, so they outlive the container
 VOLUME /data
 EXPOSE 8080
 
