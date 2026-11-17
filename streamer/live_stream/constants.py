@@ -46,12 +46,16 @@ DEFAULT_BACKGROUND = "#000000"  # the stream's own colour: empty squares, and ro
 BORDER_WIDTH = 3  # px round each square, on the 720-high picture
 COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 DEFAULT_TEXT_COLOR = "#FFFFFF"  # the stream's words, unless a square has its own
+# The Twitch channel the stream goes to, by its name (twitch.tv/<name>): only for the page's Watch, Chat, Stream Manager
+# and Analytics links (the stream key says nothing of whose channel it is). Twitch names are 4 to 25 letters, digits
+# or underscores; 3 is let through for old accounts.
+CHANNEL = re.compile(r"^[a-z0-9_]{3,25}$")
 # The Twitch extras (the Twitch settings window), all off until they're built (twitch_choices.py)
 TWITCH_DEFAULTS = {"title_from_printing": False, "chat_commands": False, "chat_on_screen": False}
 DELAY = (0, 120, 60)  # (least, most, default) seconds the stream is held before Twitch gets it (relay.Buffer)
 DEFAULT_MUSIC_VOLUME = 50  # the music's loudness, 0 to 100 (100: as the tracks are)
 SAVED = ("destination", "cols", "rows", "cells", "show_status", "layout", "seconds_all", "seconds_each", "font", "color", "enabled",
-         "resolution", "border_color", "background", "music", "music_volume", "music_shuffle", "delay", "twitch", "holding")
+         "resolution", "border_color", "background", "music", "music_volume", "music_shuffle", "delay", "twitch", "channel", "holding")
 # The holding screen: what Twitch is shown for the first minute after the plugin's own restart, while the delay fills
 # again behind it (so the channel never goes without video). Its words, a picture from the stream folder's images (None:
 # none), and its colours and font (None: the stream's own).

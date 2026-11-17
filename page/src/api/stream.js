@@ -38,6 +38,8 @@ const normalizeStream = (s) => ({
       titleFromPrinting: !!t.title_from_printing, chatCommands: !!t.chat_commands, chatOnScreen: !!t.chat_on_screen,
     }))(s.settings.twitch || {}),
     twitchExtrasReady: !!s.settings.twitch_extras_ready,
+    // the Twitch channel's name (twitch.tv/<name>), for the Watch, Chat, Stream Manager and Analytics links; null: none set
+    channel: s.settings.channel || null,
     keySet: s.settings.key_set,
     enabled: s.settings.enabled !== false, // the page's switch: off, nothing streams and the page rests
   },
@@ -82,7 +84,7 @@ export const getStream = async () => normalizeStream(await request("/stream"));
 
 // Save what's given: { destination, cols, rows, cells (the three together), showStatus, layout, resolution, secondsAll,
 // secondsEach, borderColor, background, font, color, music, musicVolume, musicShuffle, streamKey (blank: keep the saved one),
-// clearKey, enabled (the page's switch: false stops the stream), twitch (the extras) }. While live, a new picture starts the stream again.
+// clearKey, enabled (the page's switch: false stops the stream), twitch (the extras), channel (a name or address; "": none) }. While live, a new picture starts the stream again.
 export const saveStream = async (s = {}) =>
   normalizeStream(
     await request(
@@ -91,7 +93,7 @@ export const saveStream = async (s = {}) =>
         destination: s.destination, cols: s.cols, rows: s.rows, cells: s.cells, show_status: s.showStatus, layout: s.layout,
         resolution: s.resolution, seconds_all: s.secondsAll, seconds_each: s.secondsEach, border_color: s.borderColor, background: s.background, font: s.font, color: s.color,
         music: s.music, music_volume: s.musicVolume, music_shuffle: s.musicShuffle, delay: s.delay,
-        stream_key: s.streamKey || null, clear_key: !!s.clearKey, enabled: s.enabled, holding: s.holding,
+        stream_key: s.streamKey || null, clear_key: !!s.clearKey, enabled: s.enabled, holding: s.holding, channel: s.channel,
         twitch: s.twitch ? {
           title_from_printing: s.twitch.titleFromPrinting, chat_commands: s.twitch.chatCommands, chat_on_screen: s.twitch.chatOnScreen,
         } : undefined,

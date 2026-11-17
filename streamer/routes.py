@@ -56,7 +56,7 @@ def save_settings(payload: StreamSettingsIn, db: Store = Depends(get_db)):
             db, destination=payload.destination, chosen=payload.cameras, show_status=payload.show_status, layout=payload.layout,
             seconds_all=payload.seconds_all, seconds_each=payload.seconds_each, resolution=payload.resolution,
             border_color=payload.border_color, background=payload.background, font=payload.font, color=payload.color, enabled=payload.enabled, cols=payload.cols, rows=payload.rows, cells=payload.cells,
-            music=payload.music, music_volume=payload.music_volume, music_shuffle=payload.music_shuffle, delay=payload.delay, twitch=payload.twitch, holding=payload.holding,
+            music=payload.music, music_volume=payload.music_volume, music_shuffle=payload.music_shuffle, delay=payload.delay, twitch=payload.twitch, channel=payload.channel, holding=payload.holding,
             stream_key=payload.stream_key, clear_key=payload.clear_key,
         )
         live = live_stream.stream.status()["live"]

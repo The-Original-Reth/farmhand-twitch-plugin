@@ -22,6 +22,7 @@ class StreamSettingsIn(BaseModel):
     music_volume: int | None = None  # its loudness, 0 to 100
     music_shuffle: bool | None = None  # in a new order each time the stream starts (false: in name order)
     twitch: dict | None = None  # the Twitch extras: {title_from_printing, chat_commands, chat_on_screen} (not ready yet)
+    channel: str | None = Field(None, max_length=200)  # the Twitch channel's name or address, for the page's links ("": none)
     delay: int | None = None  # seconds the stream is held before Twitch gets it (0 to 120): stalls shorter than it don't show
     # the holding screen shown after the plugin's own restart while the delay fills again: {text, image, background,
     # color, font} (only what's sent changes; null colours and font: the stream's own)

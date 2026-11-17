@@ -40,7 +40,10 @@ What it does:
 - **Clips**: **Save clip** saves the last 1 second to 5 minutes of what went to Twitch as an MP4 in the NAS's Twitch
   clips folder (see [Clips](#clips)).
 
-**Twitch settings** (a window of its own, opened from the page) hold the stream key. The stream's title, category and
+**Twitch settings** (a window of its own, opened from the page) hold the stream key and your **channel's name**. The
+name gives the live panel its links, as the YouTube plugin has Watch and YouTube Studio: **Watch** (the channel),
+**Chat** (its chat in a window of its own), **Stream Manager** (Twitch's dashboard) and **Analytics**. The stream key
+doesn't say whose channel it is, so the name is asked for. The stream's title, category and
 tags are set on Twitch itself (Creator Dashboard → Stream Manager → Edit Stream Info) for now. Three Twitch extras have
 their place in the settings already, shown greyed out until they're built: the **stream title from what's printing**,
 **chat commands** (a bot answering `!printers`, `!eta`…), and **chat on the stream**.

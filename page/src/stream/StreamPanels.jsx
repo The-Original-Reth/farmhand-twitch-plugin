@@ -2,6 +2,7 @@ import { Radio } from "lucide-react";
 import { c } from "../theme.js";
 import { cancelButton, fieldBox, panelBox, primaryButton, uiText } from "../styles.js";
 import { heading, help, panel } from "./streamStyles.js";
+import { twitchLinks } from "./TwitchSettings.jsx";
 
 // The Stream page's panels: its on/off switch, on air or not, where it goes and its delay, and taking turns.
 
@@ -106,8 +107,9 @@ export function MuteSwitch({ muted, onMute }) {
 }
 
 // On air or not, and the button that changes it. `destLabel(key)`: a destination's name; `destination`: the one chosen;
-// `off`: the switch at the top is off, so there's no going live until it's on.
-export function LiveStatusPanel({ status, destLabel, destination, busy, onStart, onStop, off = false }) {
+// `off`: the switch at the top is off, so there's no going live until it's on. `channel`: the Twitch channel's name,
+// for the links to watch it, its chat, Stream Manager and Analytics (none until it's set in Twitch settings).
+export function LiveStatusPanel({ status, destLabel, destination, busy, onStart, onStop, off = false, channel = null }) {
   const on = status.encoder === "nvenc" ? " · on the NVIDIA card" : status.encoder === "cpu" ? " · on the processor" : "";
   return (
     <div data-testid="stream-status" style={panelBox({ padding: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" })}>
@@ -132,6 +134,16 @@ export function LiveStatusPanel({ status, destLabel, destination, busy, onStart,
                 ? "The stream is off: ffmpeg isn't running on the server. Set everything up as usual, and turn it on above to go live."
                 : `Farmhand sends the grid below to ${destLabel(destination)} itself, no OBS needed.`}
         </div>
+        {channel && (
+          <div data-testid="stream-twitch-links" style={uiText(12, c.textMuted, { marginTop: 6, lineHeight: 1.5 })}>
+            {twitchLinks(channel).map(([label, url, what], i) => (
+              <span key={label}>
+                {i ? " · " : ""}
+                <a href={url} target="_blank" rel="noreferrer" title={what} style={{ color: c.amber }}>{label}</a>
+              </span>
+            ))}
+          </div>
+        )}
         {status.live && status.selfCheck && (
           <div data-testid="stream-self-check" style={uiText(12, c.amber, { marginTop: 6, lineHeight: 1.5 })}>
             {timeOf(status.selfCheck.at)}: {status.selfCheck.message}

@@ -30,6 +30,14 @@ export const openTwitchSettings = () => {
   w?.focus();
 };
 
+// The channel's pages on Twitch, from its name: [label, address, what it's for]
+export const twitchLinks = (channel) => channel ? [
+  ["Watch", `https://www.twitch.tv/${channel}`, "The channel as viewers see it"],
+  ["Chat", `https://www.twitch.tv/popout/${channel}/chat?popout=`, "The channel's chat in a window of its own"],
+  ["Stream Manager", `https://dashboard.twitch.tv/u/${channel}/stream-manager`, "Twitch's dashboard: chat, activity, title and category"],
+  ["Analytics", `https://dashboard.twitch.tv/u/${channel}/analytics/channel-analytics`, "Viewers, followers and watch time"],
+] : [];
+
 // The extras to come: [key, name, what it will do]
 const EXTRAS = [
   ["titleFromPrinting", "Stream title from what's printing", "Farmhand sets the Twitch title and category from the prints going on."],
@@ -38,7 +46,7 @@ const EXTRAS = [
 ];
 
 // The summary on the Stream page, and the button that opens the window
-export function TwitchSettingsButton({ keySet, onOpen }) {
+export function TwitchSettingsButton({ keySet, channel, onOpen }) {
   return (
     <div data-testid="stream-twitch-settings" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
       <button type="button" data-testid="stream-twitch-settings-open" onClick={onOpen} style={headerButton()}>
@@ -46,6 +54,7 @@ export function TwitchSettingsButton({ keySet, onOpen }) {
       </button>
       <span style={uiText(12, keySet ? c.textMuted : c.amber, { flex: 1, minWidth: 200 })}>
         {keySet ? "Stream key saved" : "No stream key yet: add it in Twitch settings to go live"}
+        {channel ? ` · channel ${channel}` : " · no channel name (for the Watch and dashboard links)"}
       </span>
     </div>
   );
@@ -111,7 +120,7 @@ export function TwitchSettingsWindow() {
           <div style={uiText(13, loadError ? c.danger : c.textFaint)}>{loadError ? `Couldn't reach the plugin: ${loadError}` : "Loading…"}</div>
         ) : (
           <TwitchSettingsForm
-            keySet={page.settings.keySet} twitch={page.settings.twitch} extrasReady={page.settings.twitchExtrasReady}
+            keySet={page.settings.keySet} twitch={page.settings.twitch} extrasReady={page.settings.twitchExtrasReady} channel={page.settings.channel}
             live={page.status.live} busy={busy} problem={problem} savedAt={savedAt}
             onSave={async (fields) => {
               const p = await ask(() => saveStream(fields));
@@ -126,24 +135,39 @@ export function TwitchSettingsWindow() {
   );
 }
 
-// The settings themselves. `keySet`, `onForgetKey`; `twitch`: the extras as saved; `extrasReady`: whether they can be
+// The settings themselves. `keySet`, `onForgetKey`; `channel`: the channel's name as saved; `twitch`: the extras as saved; `extrasReady`: whether they can be
 // turned on yet; `onSave(fields)`: saves just these, the page as the server answered or null; `problem`: what the
 // server last refused; `savedAt`: when last saved.
-function TwitchSettingsForm({ keySet, twitch, extrasReady, live, busy, problem, savedAt, onSave, onForgetKey }) {
+function TwitchSettingsForm({ keySet, channel, twitch, extrasReady, live, busy, problem, savedAt, onSave, onForgetKey }) {
   const [key, setKey] = useState("");
+  const [name, setName] = useState(channel || "");
   const [showKey, setShowKey] = useState(false);
   const [extras, setExtras] = useState(() => ({ ...twitch }));
   const [saving, setSaving] = useState(false);
   const save = async () => {
     setSaving(true);
-    const p = await onSave({ streamKey: key.trim(), twitch: extrasReady ? extras : undefined });
+    const p = await onSave({ streamKey: key.trim(), channel: name.trim(), twitch: extrasReady ? extras : undefined });
     setSaving(false);
-    if (p) setKey("");
+    if (p) {
+      setKey("");
+      setName(p.settings.channel || "");
+    }
   };
 
   return (
     <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 6, padding: 16 }}>
       <div data-testid="twitch-settings-window" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <Section title="Your Twitch channel">
+          <input
+            data-testid="twitch-channel" value={name} onChange={(e) => setName(e.target.value)} maxLength={200}
+            placeholder="Its name, or its address: twitch.tv/yourname" style={field}
+          />
+          <div style={help}>
+            The name in your channel's address. It gives the Stream page its links to watch the channel, its chat, Twitch's
+            Stream Manager and Analytics. (The stream key doesn't say whose channel it is.)
+          </div>
+        </Section>
+
         <Section title="Stream key">
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <input
