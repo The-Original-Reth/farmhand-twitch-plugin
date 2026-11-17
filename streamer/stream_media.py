@@ -23,7 +23,8 @@ from .errors import NotFound
 from .store import Store, store
 
 IMAGES, SLIDESHOWS, MUSIC = "images", "slideshows", "music"
-PICTURE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+PICTURE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+                 ".svg": "image/svg+xml"}  # (an SVG is drawn as a PNG for the stream: live_stream/svg.py)
 PICTURE_MAX = 10 * 1024 * 1024  # an upload; pictures dropped in by hand can be any size
 # The music is MP3s only: ffmpeg plays them one after another as one long track, which needs them all the same kind
 TRACK_TYPES = {".mp3": "audio/mpeg"}
@@ -213,7 +214,7 @@ def slideshow_paths(db: Store, name: str) -> list[Path]:
 def _check_picture(filename: str, data: bytes) -> str:
     name = Path(filename or "").name
     if Path(name).suffix.lower() not in PICTURE_TYPES:
-        raise ValueError("A picture has to be a PNG, JPEG or WebP file.")
+        raise ValueError("A picture has to be a PNG, JPEG, WebP or SVG file.")
     if len(data) > PICTURE_MAX:
         raise ValueError("A picture uploaded here has to be under 10 MB. Save it smaller, or copy it into the stream folder yourself.")
     return _name(name, "picture")

@@ -115,15 +115,25 @@ def _restart_if_used(db: Store, slideshow: str | None, image: str | None = None)
             return
 
 
+# An SVG can carry scripts: opened on its own it would run them as this page. It's sent as a picture that can't
+# (CSP sandbox, no scripts), as an <img> shows it anyway.
+SVG_HEADERS = {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
+               "X-Content-Type-Options": "nosniff"}
+
+
+def _picture_answer(data: bytes, kind: str) -> Response:
+    headers = {"Cache-Control": "no-cache", **(SVG_HEADERS if kind == "image/svg+xml" else {})}
+    return Response(content=data, media_type=kind, headers=headers)
+
+
 @router.get("/pictures/{name}")
 def get_picture(name: str, db: Store = Depends(get_db)):
-    data, kind = _media(lambda: stream_media.picture(db, None, name))
-    return Response(content=data, media_type=kind, headers={"Cache-Control": "no-cache"})
+    return _picture_answer(*_media(lambda: stream_media.picture(db, None, name)))
 
 
 @router.post("/pictures", status_code=201)
 async def add_pictures(files: list[UploadFile] = File(...), db: Store = Depends(get_db)):
-    """Pictures (PNG, JPEG or WebP, under 10 MB each) into the stream folder's images. Answers the page."""
+    """Pictures (PNG, JPEG, WebP or SVG, under 10 MB each) into the stream folder's images. Answers the page."""
     for file in files:
         data = await file.read(stream_media.PICTURE_MAX + 1)
         _media(lambda: stream_media.add_picture(db, None, file.filename or "", data))
@@ -203,8 +213,7 @@ def get_font(key: str):
 
 @router.get("/slideshows/{name}/pictures/{picture}")
 def get_slideshow_picture(name: str, picture: str, db: Store = Depends(get_db)):
-    data, kind = _media(lambda: stream_media.picture(db, name, picture))
-    return Response(content=data, media_type=kind, headers={"Cache-Control": "no-cache"})
+    return _picture_answer(*_media(lambda: stream_media.picture(db, name, picture)))
 
 
 @router.post("/slideshows/{name}/pictures", status_code=201)

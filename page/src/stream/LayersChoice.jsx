@@ -59,7 +59,7 @@ export function LayersChoice({ card, setCard, media, slideName, fonts, streamTex
             <option value="">{media.images.length ? "Choose a picture…" : "No pictures yet"}</option>
             {media.images.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
-          <input ref={input} type="file" multiple accept="image/png,image/jpeg,image/webp" style={{ display: "none" }} onChange={(e) => upload([...e.target.files])} />
+          <input ref={input} type="file" multiple accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" style={{ display: "none" }} onChange={(e) => upload([...e.target.files])} />
           <button type="button" onClick={() => input.current.click()} disabled={!!busy || !!media.error} style={headerButton()}>
             {busy === "picture" ? "Uploading…" : "Upload picture"}
           </button>

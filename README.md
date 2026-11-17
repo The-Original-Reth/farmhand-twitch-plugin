@@ -74,6 +74,8 @@ itself (`streamer/mounts.py`, a copy of Farmhand's own; its container has `SYS_A
 as Farmhand's has) and uses a folder inside it for each thing it keeps, made if it isn't there:
 
 - **Stream folder** (`stream`): the stream's pictures (`images/`), slideshows (`slideshows/<name>/`) and music (`music/`).
+  Pictures can be PNG, JPEG, WebP or SVG; an SVG is drawn as a PNG for the stream when it goes live, its see-through
+  parts kept.
 - **YouTube clips** (`YouTube clips`): where **Save clip** puts its MP4s.
 
 Each is shown as people reach it on the network (`\\server\share\folder\stream`), with a **Change…** to put it in another

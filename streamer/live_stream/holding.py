@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .. import stream_media
 from ..store import Store
-from . import procs
+from . import procs, svg
 from .constants import DEFAULT_RESOLUTION, FPS, RESOLUTIONS
 from .encoders import compress_args, encoder
 from .fonts import font_file
@@ -82,6 +82,8 @@ def start(db: Store, chosen: dict, ffmpeg: str, folder: str):
     if mine.get("image"):
         try:
             picture = str(stream_media.picture_path(db, None, mine["image"]))
+            if svg.is_svg(picture):  # (drawn as a PNG first: Pillow doesn't read SVG)
+                picture = svg.copy_for_stream(picture, os.path.join(folder, "holding-picture"), None)
         except (ValueError, OSError, LookupError):
             picture = None  # (gone from the stream folder: the words alone)
     try:
