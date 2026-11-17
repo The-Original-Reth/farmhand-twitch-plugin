@@ -252,7 +252,7 @@ export function StreamSection({ layouts = [], onSaveLayouts, onSlideshowRenamed,
         />
       </div>
       <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
-        <LiveStatusPanel status={status} destLabel={destLabel} destination={shown.destination} busy={busy} onStart={start} onStop={stop} off={!enabled} />
+        <LiveStatusPanel status={status} destLabel={destLabel} destination={shown.destination} busy={busy} onStart={start} onStop={stop} off={!enabled} channel={saved.channel} />
         {aside?.(page)}
         {problem && (
           <div data-testid="stream-problem" style={uiText(13, c.danger, { lineHeight: 1.5 })}>
@@ -263,7 +263,7 @@ export function StreamSection({ layouts = [], onSaveLayouts, onSlideshowRenamed,
         <WhereToPanel
           destination={shown.destination} destinations={page.destinations} onDestination={(destination) => change({ destination })}
           delay={shown.delay} onDelay={(v) => change({ delay: v })} live={status.live}
-          settings={<TwitchSettingsButton keySet={saved.keySet} onOpen={openTwitchSettings} />}
+          settings={<TwitchSettingsButton keySet={saved.keySet} channel={saved.channel} onOpen={openTwitchSettings} />}
         />
 
         <HoldingScreenPanel shown={shown} change={change} media={page.media} fonts={page.fonts} saved={saved.holding} onSave={saveHolding} busy={busy} />

@@ -61,6 +61,15 @@ def test_the_stream_goes_to_twitch_only(api):
     assert "youtube" not in page and "title" not in page["settings"]
 
 
+def test_the_channel_name_is_kept_from_a_name_or_an_address(api):
+    assert api.get("/api/stream").json()["settings"]["channel"] is None
+    for typed in ("3DPrintingElves", "https://www.twitch.tv/3dprintingelves/", "twitch.tv/3DPrintingElves/videos", "@3dprintingelves"):
+        assert api.put("/api/stream", json={"channel": typed}).json()["settings"]["channel"] == "3dprintingelves"
+    r = api.put("/api/stream", json={"channel": "not a name!"})
+    assert r.status_code == 422 and "twitch.tv/<name>" in r.json()["detail"]
+    assert api.put("/api/stream", json={"channel": ""}).json()["settings"]["channel"] is None
+
+
 def test_the_twitch_extras_are_kept_but_cant_be_turned_on_yet(api):
     page = api.get("/api/stream").json()
     assert page["settings"]["twitch"] == {"title_from_printing": False, "chat_commands": False, "chat_on_screen": False}

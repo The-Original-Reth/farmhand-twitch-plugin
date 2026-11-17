@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 
 from ..store import Store
 
@@ -12,7 +13,7 @@ from .. import app_settings
 from .fonts import DEFAULT_FONT, FONTS
 from . import twitch_choices
 from .constants import (CAMERA_KEY, COLOR, DEFAULT_BACKGROUND, DEFAULT_BORDER, DEFAULT_DESTINATION, DEFAULT_MUSIC_VOLUME,
-                        DEFAULT_RESOLUTION, DEFAULT_TEXT_COLOR, DELAY, DESTINATIONS, HOLDING_DEFAULTS,
+                        DEFAULT_RESOLUTION, CHANNEL, DEFAULT_TEXT_COLOR, DELAY, DESTINATIONS, HOLDING_DEFAULTS,
                         HOLDING_TEXT_MAX, KEY_SHAPE, LAYOUTS, MAX_CAMERAS, MAX_SIDE, RESOLUTIONS, SAVED, SECONDS,
                         SETTINGS_KEY, STREAM_KEY_KEY)
 from .squares import MAX_LAYERS, SLIDE_SECONDS, TEXT_MAX, _cell, _color, _named
@@ -97,7 +98,8 @@ def settings(db: Store) -> dict:
     streams), music: the stream folder's music played, starting with the stream (on unless turned off; False: a silent
     sound track), music_volume (0 to 100), music_shuffle: each round in a new order (False: in name order), key_set,
     delay: seconds the stream is held before Twitch gets it (0 to 120), so a stall shorter than that never reaches it,
-    twitch: the Twitch extras (twitch_choices.kept), twitch_extras_ready: whether they can be turned on yet}.
+    twitch: the Twitch extras (twitch_choices.kept), twitch_extras_ready: whether they can be turned on yet, channel:
+    the Twitch channel's name for the page's links, or None}.
     The key itself is never given. Settings from before the grid (a list of cameras) come back as the grid they made.
     """
     raw = _saved(db)
@@ -132,6 +134,7 @@ def settings(db: Store) -> dict:
         "delay": raw["delay"] if type(raw.get("delay")) is int and DELAY[0] <= raw["delay"] <= DELAY[1] else DELAY[2],
         "twitch": twitch_choices.kept(raw.get("twitch")),
         "twitch_extras_ready": twitch_choices.EXTRAS_READY,
+        "channel": raw.get("channel") if isinstance(raw.get("channel"), str) and CHANNEL.match(raw["channel"]) else None,
         "holding": _holding(raw.get("holding")),
         "key_set": bool(app_settings.get(db, STREAM_KEY_KEY)),
     }
@@ -190,7 +193,7 @@ def check_cells(db: Store, cols, rows, cells) -> list[dict | None]:
 def save(db: Store, *, destination=None, chosen=None, show_status=None, stream_key=None, clear_key=False, layout=None,
          resolution=None, border_color=None, background=None, font=None, color=None, enabled=None, cols=None, rows=None, cells=None,
          seconds_all=None, seconds_each=None, music=None, music_volume=None, music_shuffle=None,
-         delay=None, twitch=None, holding=None) -> dict:
+         delay=None, twitch=None, channel=None, holding=None) -> dict:
     """
     Change what's given (None: left as it is). The grid comes as cols, rows and cells together; or `chosen`, a list of
     cameras, which makes a grid just big enough for them, in that order. Anything that can't be
@@ -226,6 +229,8 @@ def save(db: Store, *, destination=None, chosen=None, show_status=None, stream_k
             now[name] = bool(value)
     if twitch is not None:
         now["twitch"] = twitch_choices.checked(twitch, now["twitch"])
+    if channel is not None:
+        now["channel"] = channel_name(channel)
     if holding is not None:
         now["holding"] = _check_holding(holding, now["holding"])
     if delay is not None:
@@ -290,3 +295,15 @@ def rename_slideshow(db: Store, old: str, new: str) -> int:
     if in_layouts:
         saved_layouts.save(db, layouts)
     return changed + in_layouts
+
+
+def channel_name(text: str) -> str | None:
+    """The Twitch channel as typed or pasted: its name, or its address (twitch.tv/name), in any case. "" clears it.
+    ValueError when it can't be a Twitch name."""
+    name = re.sub(r"^(https?://)?(www\.|m\.)?twitch\.tv/", "", text.strip(), flags=re.I).strip("/").split("/")[0].lstrip("@").lower()
+    if not name:
+        return None
+    if not CHANNEL.match(name):
+        raise ValueError("That isn't a Twitch channel name: it's the name in your channel's address, twitch.tv/<name> "
+                         "(letters, numbers and _ only).")
+    return name
