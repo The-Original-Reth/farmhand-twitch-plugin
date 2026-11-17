@@ -12,7 +12,7 @@ from ..store import Store
 from ..errors import NotFound
 from .. import storage
 from .. import stream_media
-from . import slides
+from . import slides, svg
 from .constants import DEFAULT_TEXT_COLOR
 from .fonts import font_file
 from .frame import Frame
@@ -60,8 +60,7 @@ def local_copies(pictures: dict, folder: str) -> dict:
                 to = os.path.join(folder, "pictures", str(len(copied)), os.path.basename(path))
                 try:
                     os.makedirs(os.path.dirname(to), exist_ok=True)
-                    shutil.copyfile(path, to)
-                    copied[path] = to
+                    copied[path] = svg.copy_for_stream(path, to, shutil.copyfile)
                 except OSError:
                     copied[path] = None
             if copied[path]:
@@ -160,8 +159,7 @@ def staged_layers(db: Store, layers: list, folder: str, tag: str, copied: dict) 
                 to = os.path.join(folder, "pictures", f"layer-{len(copied)}", os.path.basename(path))
                 try:
                     os.makedirs(os.path.dirname(to), exist_ok=True)
-                    shutil.copyfile(path, to)
-                    copied[path] = to
+                    copied[path] = svg.copy_for_stream(path, to, shutil.copyfile)
                 except OSError:
                     copied[path] = None
             if copied[path]:

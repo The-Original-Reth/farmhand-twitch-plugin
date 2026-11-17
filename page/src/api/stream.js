@@ -124,8 +124,8 @@ export const saveStream = async (s = {}) =>
 export const startStream = async () => normalizeStream(await post("/stream/start"));
 export const stopStream = async () => normalizeStream(await post("/stream/stop"));
 
-// The stream folder's pictures, as files: single pictures in images/, each slideshow a folder in slideshows/ (PNG, JPEG or
-// WebP; uploads under 10 MB). Files dropped into the folder by hand count too.
+// The stream folder's pictures, as files: single pictures in images/, each slideshow a folder in slideshows/ (PNG, JPEG,
+// WebP or SVG; uploads under 10 MB). Files dropped into the folder by hand count too.
 const enc = encodeURIComponent;
 const filesBody = (files) => {
   const form = new FormData();

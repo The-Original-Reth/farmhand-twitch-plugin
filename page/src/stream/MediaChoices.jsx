@@ -28,7 +28,7 @@ export function PictureChoice({ card, setCard, media, ask, busy }) {
           {card.image && !media.images.includes(card.image) && <option value={card.image}>{card.image} (not in the folder)</option>}
           {media.images.map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
-        <input ref={input} data-testid="stream-picture-file" type="file" multiple accept="image/png,image/jpeg,image/webp" style={{ display: "none" }} onChange={(e) => upload([...e.target.files])} />
+        <input ref={input} data-testid="stream-picture-file" type="file" multiple accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" style={{ display: "none" }} onChange={(e) => upload([...e.target.files])} />
         <button type="button" data-testid="stream-picture-upload" onClick={() => input.current.click()} disabled={!!busy || !!media.error} style={headerButton()}>
           {busy === "picture" ? "Uploading…" : "Upload picture"}
         </button>
@@ -50,7 +50,7 @@ export function PictureChoice({ card, setCard, media, ask, busy }) {
           </button>
         </div>
       )}
-      <div style={help}>PNG, JPEG or WebP, fitted to the square. Pictures copied into the stream folder's images folder show up here too.</div>
+      <div style={help}>PNG, JPEG, WebP or SVG, fitted to the square. Pictures copied into the stream folder's images folder show up here too.</div>
     </>
   );
 }
@@ -97,7 +97,7 @@ export function SlideshowChoice({ card, setCard, media, ask, busy, slide, onRena
         {card.slideshow && !show && <option value={card.slideshow}>{card.slideshow} (not in the folder)</option>}
         {media.slideshows.map((x) => <option key={x.name} value={x.name}>{x.name} ({x.images.length})</option>)}
       </select>
-      <input ref={input} data-testid="stream-slideshow-file" type="file" multiple accept="image/png,image/jpeg,image/webp" style={{ display: "none" }} onChange={(e) => addPictures([...e.target.files])} />
+      <input ref={input} data-testid="stream-slideshow-file" type="file" multiple accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" style={{ display: "none" }} onChange={(e) => addPictures([...e.target.files])} />
       <div style={row}>
         <button type="button" data-testid="stream-slideshow-new" onClick={() => (setName(""), setRemoving(null), setRenaming(null))} disabled={off} style={headerButton()}>
           New slideshow
