@@ -37,6 +37,13 @@ What it does:
 - **It reads only what it needs**: the cameras' addresses (`cameras:read`) and what each printer is printing
   (`prints:read`). Its settings, Twitch stream key and saved layouts are in its own volume (`/data/settings.json`,
   readable only by the plugin), and its API never answers the key.
+- **Farmhand's Stream control** (Farmhand's built-in plugin for designing one stream and sending it everywhere): tick
+  Twitch under its Streams and **Stream control's layout takes over**. The plugin sends Farmhand's design (the grid, its
+  squares, the music, the holding screen) in place of its own layout, which it keeps as it is and goes back to
+  as soon as Stream control is switched off or Twitch is unticked. Its page then shows **Controlled by Stream control** in
+  place of the layout editor; the stream key, the channel and the Twitch settings stay here. Farmhand's **Go live** and
+  **Stop** start and stop it (`/api/stream-control`, `stream:read`). Changes saved in Stream control reach the stream
+  within a few seconds, as a change saved here does.
 - **Clips**: **Save clip** saves the last 1 second to 5 minutes of what went to Twitch as an MP4 in the NAS's Twitch
   clips folder (see [Clips](#clips)).
 

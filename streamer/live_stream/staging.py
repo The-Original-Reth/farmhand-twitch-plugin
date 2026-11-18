@@ -34,9 +34,9 @@ def card_pictures(db: Store, cards: dict) -> dict:
     for c, cell in (cards.items() if isinstance(cards, dict) else []):
         try:
             if cell.get("slideshow"):
-                out[c] = [str(p) for p in stream_media.slideshow_paths(db, cell["slideshow"])]
+                out[c] = [str(p) for p in stream_media.sent_slideshow_paths(db, cell["slideshow"])]
             elif cell.get("image"):
-                out[c] = [str(stream_media.picture_path(db, None, cell["image"]))]
+                out[c] = [str(stream_media.sent_picture_path(db, cell["image"]))]
         except (NotFound, ValueError, storage.StorageUnavailableError, OSError):
             out[c] = []
     return out
@@ -152,7 +152,7 @@ def staged_layers(db: Store, layers: list, folder: str, tag: str, copied: dict) 
     for k, layer in enumerate(layers):
         if layer.get("type") == "picture" and layer.get("image"):
             try:
-                path = str(stream_media.picture_path(db, None, layer["image"]))
+                path = str(stream_media.sent_picture_path(db, layer["image"]))
             except (NotFound, ValueError, storage.StorageUnavailableError, OSError):
                 continue
             if path not in copied:

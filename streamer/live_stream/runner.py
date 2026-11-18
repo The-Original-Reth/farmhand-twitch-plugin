@@ -26,7 +26,7 @@ from .pictures import PicturesMixin
 from .self_check import SelfCheckMixin
 from .sending import SendingMixin
 from .constants import DEFAULT_RESOLUTION, DESTINATIONS, KEPT_LINES, RESOLUTIONS, STREAM_KEY_KEY
-from .choices import settings
+from .choices import chosen as settings  # (what the stream sends: Stream control's design while it's followed)
 from .encoders import encoder
 from .buffer import Buffer
 from .relay import Relay
@@ -172,7 +172,8 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
         if not key:
             raise ValueError(f"Add your {where['label']} stream key first (Twitch settings).")
         if not chosen["cameras"]:
-            raise ValueError("Put at least one camera in the grid.")
+            raise ValueError("Put at least one camera in Stream control's layout (in Farmhand)." if chosen["following"]
+                             else "Put at least one camera in the grid.")
         ffmpeg = procs.ffmpeg_path()
         if not ffmpeg:
             raise ValueError("ffmpeg isn't installed in the Stream plugin's container, so it can't stream. Rebuild its image.")
@@ -241,7 +242,7 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
 
         def tracks() -> list[str]:  # read again each round of the music, so tracks added while live join in
             with session_factory() as s:
-                return [str(p) for p in stream_media.track_paths(s)]
+                return [str(p) for p in stream_media.sent_track_paths(s)]
 
         # the music starts with the stream (when it's on and there are tracks; silence otherwise)
         player = music.Player(ffmpeg, tracks, on=chosen["music"], shuffle=chosen["music_shuffle"], volume=chosen["music_volume"])

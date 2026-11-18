@@ -12,7 +12,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN = "good-token"
-EVERYTHING = {"printers:read", "prints:read", "farm:read", "cameras:read"}
+EVERYTHING = {"printers:read", "prints:read", "farm:read", "cameras:read", "stream:read"}
 MJPEG = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_on_network_error", "1", "-reconnect_delay_max", "5",
          "-rw_timeout", "10000000", "-use_wallclock_as_timestamps", "1", "-f", "mpjpeg"]
 
@@ -41,6 +41,11 @@ class FakeFarmhand:
             2: {"printer_id": 2, "printer_name": "Core One", "error": None,
                 "cameras": [camera("Camera", "http://10.0.6.30/stream"), camera("Nozzle", "", error="Core One's Nozzle camera only plays in a browser (WebRTC).")]},
         }
+        # Stream control: its design while this plugin is ticked in it (None: {"enabled": false}), the media it lists,
+        # and the files Farmhand hands over, by their path under /stream ("pictures/logo.png", "music/beat.mp3"...)
+        self.design: dict | None = None
+        self.media = {"images": [], "slideshows": [], "music": [], "error": None}
+        self.files: dict[str, bytes] = {}
         self.down = False  # True: nothing answers (Farmhand stopped)
         self.permissions = set(EVERYTHING)
         self.busy_for = 0  # the next this-many calls get 429
@@ -126,6 +131,21 @@ class FakeFarmhand:
                 "scheme": "farmhand", "mode": "dark", "time_zone": "Europe/London",
                 "colors": {"bg": "#1B1D1E", "amber": "#E39F3A"},
             })
+        if path == "/stream/design":
+            if not self.allowed(h, "stream:read"):
+                return
+            if self.design is None:
+                return self.send(h, 200, {"enabled": False})
+            return self.send(h, 200, {"enabled": True, "design": self.design, "media": self.media})
+        if path.startswith("/stream/"):
+            from urllib.parse import unquote
+
+            name = unquote(path.removeprefix("/stream/"))
+            if not self.allowed(h, "stream:read"):
+                return
+            if self.design is None or name not in self.files:
+                return self.send(h, 404, {"detail": "That file isn't there."})
+            return self.send_bytes(h, self.files[name])
         if path == "/events":
             return self.allowed(h, "prints:read") and self.events(h)
         self.send(h, 404, {"detail": "Not Found"})
@@ -143,6 +163,14 @@ class FakeFarmhand:
         h.send_header("Content-Length", str(len(data)))
         for k, v in (headers or {}).items():
             h.send_header(k, v)
+        h.end_headers()
+        h.wfile.write(data)
+        return True
+
+    def send_bytes(self, h, data: bytes) -> bool:
+        h.send_response(200)
+        h.send_header("Content-Type", "application/octet-stream")
+        h.send_header("Content-Length", str(len(data)))
         h.end_headers()
         h.wfile.write(data)
         return True

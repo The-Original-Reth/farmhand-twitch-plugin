@@ -101,8 +101,37 @@ def settings(db: Store) -> dict:
     twitch: the Twitch extras (twitch_choices.kept), twitch_extras_ready: whether they can be turned on yet, channel:
     the Twitch channel's name for the page's links, or None}.
     The key itself is never given. Settings from before the grid (a list of cameras) come back as the grid they made.
+    These are the plugin's own (its page's); what the stream sends is chosen() (Stream control's design, while it's followed).
     """
-    raw = _saved(db)
+    return _normalised(db, _saved(db))
+
+
+# What Stream control's design (Farmhand's GET /stream/design) brings in, in place of the plugin's own: the picture,
+# the music, the holding screen. Not the stream key, the channel, the Twitch extras or the plugin's own on/off switch.
+DESIGNED = ("cols", "rows", "cells", "show_status", "layout", "seconds_all", "seconds_each", "resolution", "border_color",
+            "background", "font", "color", "music", "music_volume", "music_shuffle", "delay", "holding")
+TITLE_MAX = 140  # Twitch's stream title
+
+
+def chosen(db: Store) -> dict:
+    """What the stream sends: settings(), with Stream control's design in place of the plugin's own layout while it's
+    followed (stream_control.py), plus following (bool), title and description (Stream control's; None while not
+    following). The plugin's own settings are never changed by it."""
+    from .. import stream_control  # (not at the top: it imports the engine)
+
+    design = stream_control.follower.design()
+    if design is None:
+        return {**settings(db), "following": False, "title": None, "description": None}
+    raw = {**_saved(db), **{k: design[k] for k in DESIGNED if k in design}}
+    raw.pop("cameras", None)
+    out = _normalised(db, raw)
+    title = design.get("title") if isinstance(design.get("title"), str) else ""
+    description = design.get("description") if isinstance(design.get("description"), str) else ""
+    return {**out, "following": True, "title": title.strip()[:TITLE_MAX], "description": description}
+
+
+def _normalised(db: Store, raw: dict) -> dict:
+    """The settings as kept (see settings()), anything missing or unusable given its default."""
     destination = raw.get("destination") if raw.get("destination") in DESTINATIONS else DEFAULT_DESTINATION
     if isinstance(raw.get("cells"), list) and _side(raw.get("cols")) and _side(raw.get("rows")):
         cols, rows = raw["cols"], raw["rows"]

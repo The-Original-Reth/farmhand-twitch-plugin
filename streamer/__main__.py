@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 
-from . import camera_watch, config, save_location, store
+from . import camera_watch, config, save_location, store, stream_control
 from .app import app
 from .live_stream import stream
 
@@ -16,9 +16,15 @@ async def _running(_app):
     s = store.store()
     save_location.ensure(s)  # the save location on the NAS mounted again (a mount is gone once the container restarts)
     camera_watch.start()  # the cameras kept in step with Farmhand (the Clip drop-down follows cameras added or removed)
+    try:  # Stream control asked first, so a stream live before the restart comes back with the layout it's to send
+        stream_control.follower.check()
+    except Exception as e:  # noqa: BLE001 - asked again every few seconds
+        print(f"stream: asking Stream control failed ({e})", flush=True)
+    stream_control.follower.start()
     stream.resume(s, store.session_factory)  # live before the restart: live again
     yield
     # (only the container stopping: it goes live again when it starts)
+    stream_control.follower.stop()
     camera_watch.stop()
     stream.stop(forget=False)
 

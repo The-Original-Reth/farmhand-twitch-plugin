@@ -19,6 +19,7 @@ import urllib.request
 from collections.abc import Iterator
 
 CALL_TIMEOUT = 15  # seconds; asking a printer that's off can take Farmhand a few
+FILE_TIMEOUT = 120  # seconds a file (an MP3 of the stream's music, say) may take to come
 EVENTS_TIMEOUT = 45  # Farmhand sends a comment line every 15 s on /events; this long without one means it's gone
 
 
@@ -30,10 +31,12 @@ class FarmhandError(Exception):
     `short` is the same in fewer words (for /health, which Farmhand's Plugins page shows in a line or two).
     """
 
-    def __init__(self, message: str, kind: str, retry_after: float | None = None, short: str | None = None):
+    def __init__(self, message: str, kind: str, retry_after: float | None = None, short: str | None = None,
+                 status: int | None = None):
         super().__init__(message)
         self.message, self.kind, self.retry_after = message, kind, retry_after
         self.short = short or message
+        self.status = status  # Farmhand's answer's HTTP status, when it answered
 
 
 class Farmhand:
@@ -62,6 +65,17 @@ class Farmhand:
     def farm(self) -> dict:
         """GET /farm (farm:read): {mode, colors, time_zone}, so the page matches Farmhand when opened on its own."""
         return self.get("/farm")
+
+    def stream_design(self) -> dict:
+        """GET /stream/design (stream:read): Stream control's design, {"enabled": false} while it isn't for this plugin,
+        or {enabled: true, design: {cols, rows, cells, ... title, description, revision, saved_at}, media: {images,
+        slideshows: [{name, images}], music, error}}."""
+        return self.get("/stream/design")
+
+    def file(self, path: str) -> bytes:
+        """A file Farmhand hands over as it is (a picture, a track): its bytes."""
+        with self._open(path, accept="*/*", timeout=max(self.timeout, FILE_TIMEOUT)) as answer:
+            return answer.read()
 
     def events(self) -> Iterator[tuple[str, dict]]:
         """
@@ -137,7 +151,7 @@ def _refusal(e: urllib.error.HTTPError) -> FarmhandError:
         )
         return FarmhandError(f"{words} (Farmhand said: {detail})", "refused", short=words)
     if e.code == 403:
-        return FarmhandError(f"Farmhand won't let this plugin read that. {detail}", "forbidden")
+        return FarmhandError(f"Farmhand won't let this plugin read that. {detail}", "forbidden", status=403)
     if e.code == 429:
         try:
             wait = float(e.headers.get("Retry-After", "5"))
@@ -148,7 +162,7 @@ def _refusal(e: urllib.error.HTTPError) -> FarmhandError:
         return FarmhandError(detail, "gone")
     if e.code in (502, 503, 504):
         return FarmhandError(f"Farmhand isn't ready (it answered {e.code}); it may be starting up.", "down")
-    return FarmhandError(f"Farmhand answered {e.code}: {detail}", "error")
+    return FarmhandError(f"Farmhand answered {e.code}: {detail}", "error", status=e.code)
 
 
 def _detail(e: urllib.error.HTTPError) -> str:

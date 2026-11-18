@@ -205,10 +205,36 @@ def picture_path(db: Store, slideshow: str | None, name: str) -> Path:
     return _picture_path(_pictures_dir(folder(db), slideshow), name)
 
 
-def slideshow_paths(db: Store, name: str) -> list[Path]:
-    """A slideshow's pictures, in its own order ([] for one that isn't there); a blank screen as its name ("blank:1")."""
-    d = _slideshow_dir(db, name)
+# ------------------------------------------------------------------ what the stream sends
+# While Stream control's design is followed (stream_control.py), its pictures and music are Farmhand's, copied into a
+# folder of the plugin's own laid out as a stream folder is: the stream reads them from there, and the plugin's own
+# stream folder (its page's) is left as it is.
+
+
+def _sent_root(db: Store) -> Path:
+    from . import stream_control  # (not at the top: it imports the engine, which imports this)
+
+    return stream_control.follower.media_dir() or folder(db)
+
+
+def sent_picture_path(db: Store, name: str) -> Path:
+    """One of the single pictures, as the stream sends it (Stream control's while it's followed)."""
+    return _picture_path(_pictures_dir(_sent_root(db), None), name)
+
+
+def sent_slideshow_paths(db: Store, name: str) -> list[Path]:
+    """A slideshow's pictures as the stream sends them (in its own order; a blank screen as its name, "blank:1"; [] for one that isn't there)."""
+    d = _sent_root(db) / SLIDESHOWS / _name(name, "slideshow")
     return [n if is_blank(n) else d / n for n in _slides_in(d)]
+
+
+def sent_track_paths(db: Store) -> list[Path]:
+    """The music as the stream plays it (its tracks in name order; [] when there are none, or the folder can't be used now)."""
+    try:
+        d = _sent_root(db) / MUSIC
+    except storage.StorageUnavailableError:
+        return []
+    return [d / n for n in _files_in(d, TRACK_TYPES)]
 
 
 def _check_picture(filename: str, data: bytes) -> str:
@@ -306,15 +332,6 @@ def track_path(db: Store, name: str) -> Path:
     if path.suffix.lower() not in TRACK_TYPES or not path.is_file():
         raise NotFound("That track isn't there.")
     return path
-
-
-def track_paths(db: Store) -> list[Path]:
-    """The music's tracks, in name order ([] when there are none, or the stream folder can't be used now)."""
-    try:
-        d = folder(db) / MUSIC
-    except storage.StorageUnavailableError:
-        return []
-    return [d / n for n in _files_in(d, TRACK_TYPES)]
 
 
 def add_track(db: Store, filename: str, data: bytes) -> str:
