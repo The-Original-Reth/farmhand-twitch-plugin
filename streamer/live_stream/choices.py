@@ -98,7 +98,7 @@ def settings(db: Store) -> dict:
     streams), music: the stream folder's music played, starting with the stream (on unless turned off; False: a silent
     sound track), music_volume (0 to 100), music_shuffle: each round in a new order (False: in name order), key_set,
     delay: seconds the stream is held before Twitch gets it (0 to 120), so a stall shorter than that never reaches it,
-    twitch: the Twitch extras (twitch_choices.kept), twitch_extras_ready: whether they can be turned on yet, channel:
+    twitch: the Twitch extras (twitch_choices.kept), twitch_extras_ready: whether they can all be turned on yet, twitch_ready: each one's, channel:
     the Twitch channel's name for the page's links, or None}.
     The key itself is never given. Settings from before the grid (a list of cameras) come back as the grid they made.
     These are the plugin's own (its page's); what the stream sends is chosen() (Stream control's design, while it's followed).
@@ -163,6 +163,7 @@ def _normalised(db: Store, raw: dict) -> dict:
         "delay": raw["delay"] if type(raw.get("delay")) is int and DELAY[0] <= raw["delay"] <= DELAY[1] else DELAY[2],
         "twitch": twitch_choices.kept(raw.get("twitch")),
         "twitch_extras_ready": twitch_choices.EXTRAS_READY,
+        "twitch_ready": dict(twitch_choices.READY),
         "channel": raw.get("channel") if isinstance(raw.get("channel"), str) and CHANNEL.match(raw["channel"]) else None,
         "holding": _holding(raw.get("holding")),
         "key_set": bool(app_settings.get(db, STREAM_KEY_KEY)),

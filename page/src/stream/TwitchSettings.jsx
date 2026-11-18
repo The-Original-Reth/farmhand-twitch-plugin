@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { Eye, EyeOff, Twitch } from "lucide-react";
 import { c } from "../theme.js";
 import { cancelButton, fieldBox, headerButton, primaryButton, uiText } from "../styles.js";
-import { errorText, getStream, saveStream } from "../api.js";
+import {
+  cancelTwitchSignIn, errorText, getStream, getTwitch, saveStream, saveTwitchApp, setTwitchTitleNow, signOutTwitch, startTwitchSignIn,
+} from "../api.js";
 import { help, label12 } from "./streamStyles.js";
 
 // Everything Twitch, in a browser window of its own (?view=twitch-settings; TwitchSettingsButton opens it), so it can be
-// moved anywhere and left open: the stream key, and the Twitch extras (the title set from what's printing, chat
-// commands, chat on the stream), which come in a later version and are shown greyed out until then. Save saves just
+// moved anywhere and left open: the stream key, and the Twitch extras: the title set from what's printing (with the
+// sign-in to Twitch it needs, TitleFromPrinting), and chat commands and chat on the stream, which come in a later version
+// and are shown greyed out until then. Save saves just
 // these (changes on the Stream page not saved yet stay as they are) and tells the Stream page, wherever it's open, to
 // show them.
 
@@ -38,9 +41,8 @@ export const twitchLinks = (channel) => channel ? [
   ["Analytics", `https://dashboard.twitch.tv/u/${channel}/analytics/channel-analytics`, "Viewers, followers and watch time"],
 ] : [];
 
-// The extras to come: [key, name, what it will do]
+// The extras still to come: [key, name, what it will do] (the title from what's printing has its own section)
 const EXTRAS = [
-  ["titleFromPrinting", "Stream title from what's printing", "Farmhand sets the Twitch title and category from the prints going on."],
   ["chatCommands", "Chat commands", "A bot answers viewers in chat, like !printers or !eta."],
   ["chatOnScreen", "Chat on the stream", "The latest Twitch chat shown over the picture."],
 ];
@@ -120,7 +122,7 @@ export function TwitchSettingsWindow() {
           <div style={uiText(13, loadError ? c.danger : c.textFaint)}>{loadError ? `Couldn't reach the plugin: ${loadError}` : "Loading…"}</div>
         ) : (
           <TwitchSettingsForm
-            keySet={page.settings.keySet} twitch={page.settings.twitch} extrasReady={page.settings.twitchExtrasReady} channel={page.settings.channel}
+            keySet={page.settings.keySet} twitch={page.settings.twitch} ready={page.settings.twitchReady} channel={page.settings.channel}
             live={page.status.live} busy={busy} problem={problem} savedAt={savedAt}
             onSave={async (fields) => {
               const p = await ask(() => saveStream(fields));
@@ -135,10 +137,10 @@ export function TwitchSettingsWindow() {
   );
 }
 
-// The settings themselves. `keySet`, `onForgetKey`; `channel`: the channel's name as saved; `twitch`: the extras as saved; `extrasReady`: whether they can be
+// The settings themselves. `keySet`, `onForgetKey`; `channel`: the channel's name as saved; `twitch`: the extras as saved; `ready`: which can be
 // turned on yet; `onSave(fields)`: saves just these, the page as the server answered or null; `problem`: what the
 // server last refused; `savedAt`: when last saved.
-function TwitchSettingsForm({ keySet, channel, twitch, extrasReady, live, busy, problem, savedAt, onSave, onForgetKey }) {
+function TwitchSettingsForm({ keySet, channel, twitch, ready, live, busy, problem, savedAt, onSave, onForgetKey }) {
   const [key, setKey] = useState("");
   const [name, setName] = useState(channel || "");
   const [showKey, setShowKey] = useState(false);
@@ -146,7 +148,7 @@ function TwitchSettingsForm({ keySet, channel, twitch, extrasReady, live, busy, 
   const [saving, setSaving] = useState(false);
   const save = async () => {
     setSaving(true);
-    const p = await onSave({ streamKey: key.trim(), channel: name.trim(), twitch: extrasReady ? extras : undefined });
+    const p = await onSave({ streamKey: key.trim(), channel: name.trim(), twitch: extras });
     setSaving(false);
     if (p) {
       setKey("");
@@ -190,16 +192,18 @@ function TwitchSettingsForm({ keySet, channel, twitch, extrasReady, live, busy, 
           </div>
           <div style={help}>
             The stream's title, category and tags are set on Twitch itself, in Creator Dashboard → Stream Manager → Edit Stream
-            Info, until the title from what's printing comes in a later version.
+            Info, or by the plugin from what's printing (below).
           </div>
         </Section>
 
-        <Section title="Twitch extras">
-          {!extrasReady && <div style={help}>Coming in a later version of the plugin: they're shown here so you know where they'll be.</div>}
+        <TitleFromPrinting extras={extras} setExtras={setExtras} live={live} />
+
+        <Section title="More Twitch extras">
+          <div style={help}>Coming in a later version of the plugin: they're shown here so you know where they'll be.</div>
           {EXTRAS.map(([k, name, what]) => (
-            <label key={k} style={{ ...label12, opacity: extrasReady ? 1 : 0.6 }} title={extrasReady ? undefined : "Coming in a later version"}>
+            <label key={k} style={{ ...label12, opacity: ready[k] ? 1 : 0.6 }} title={ready[k] ? undefined : "Coming in a later version"}>
               <input
-                type="checkbox" data-testid={`twitch-${k}`} disabled={!extrasReady} checked={!!extras[k]}
+                type="checkbox" data-testid={`twitch-${k}`} disabled={!ready[k]} checked={!!extras[k]}
                 onChange={(e) => setExtras((x) => ({ ...x, [k]: e.target.checked }))}
               />
               {name} <span style={uiText(11, c.textFaint)}>({what})</span>
@@ -222,5 +226,137 @@ function TwitchSettingsForm({ keySet, channel, twitch, extrasReady, live, busy, 
         </button>
       </div>
     </div>
+  );
+}
+
+const when = (d) => d ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+
+// The title from what's printing: the Twitch application the plugin signs in through, the sign-in itself (a code typed
+// on twitch.tv/activate), the extra's switch and its wording (saved with Save, with the rest), and the title last set.
+// The sign-in's own buttons act at once. `extras`, `setExtras`: the extras as being changed here.
+function TitleFromPrinting({ extras, setExtras, live }) {
+  const [tw, setTw] = useState(null);
+  const [problem, setProblem] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [clientId, setClientId] = useState(null); // (null: as saved)
+  const [secret, setSecret] = useState("");
+
+  useEffect(() => {
+    let on = true;
+    const look = () => getTwitch().then((t) => on && setTw(t)).catch((e) => on && setProblem(errorText(e)));
+    look();
+    const timer = setInterval(look, tw?.signingIn ? 2000 : 5000);
+    return () => {
+      on = false;
+      clearInterval(timer);
+    };
+  }, [!!tw?.signingIn]);
+
+  const act = async (call) => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      setTw(await call());
+      return true;
+    } catch (e) {
+      setProblem(errorText(e));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saveApp = async () => {
+    if (await act(() => saveTwitchApp({ clientId: (clientId ?? tw.clientId).trim(), clientSecret: secret.trim() }))) {
+      setClientId(null);
+      setSecret("");
+    }
+  };
+
+  if (!tw) return <Section title="Stream title from what's printing"><div style={help}>{problem || "Loading…"}</div></Section>;
+  const appChanged = (clientId !== null && clientId.trim() !== tw.clientId) || secret.trim();
+  return (
+    <Section title="Stream title from what's printing">
+      <label style={label12}>
+        <input
+          type="checkbox" data-testid="twitch-titleFromPrinting" checked={!!extras.titleFromPrinting}
+          onChange={(e) => setExtras((x) => ({ ...x, titleFromPrinting: e.target.checked }))}
+        />
+        Keep the Twitch title to what the farm is printing, while the stream is live
+      </label>
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 8px", alignItems: "center" }}>
+        <span style={uiText(12, c.textMuted)}>While printing</span>
+        <input
+          data-testid="twitch-title-format" value={extras.titleFormat || ""} maxLength={200} style={field}
+          placeholder="Printing now: {prints}" onChange={(e) => setExtras((x) => ({ ...x, titleFormat: e.target.value }))}
+        />
+        <span style={uiText(12, c.textMuted)}>Nothing printing</span>
+        <input
+          data-testid="twitch-title-idle" value={extras.titleIdle || ""} maxLength={200} style={field}
+          placeholder="3D print farm, live" onChange={(e) => setExtras((x) => ({ ...x, titleIdle: e.target.value }))}
+        />
+      </div>
+      <div style={help}>
+        {"{prints}"} becomes what each printer is printing, like “Frog on VT 796, Benchy on V2 BOG”; {"{count}"} how many printers
+        are printing. Twitch shows up to 140 characters: when there's more, the last prints become “and 3 more”. The title
+        is looked at every minute while live, and changed on Twitch only when it's different. Save to keep these.
+      </div>
+
+      <div style={uiText(12, c.heading, { fontWeight: 600, marginTop: 4 })}>Signing in to Twitch</div>
+      {tw.signedInAs ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span data-testid="twitch-signed-in" style={uiText(12, c.green, { flex: 1 })}>Signed in as {tw.signedInAs}</span>
+          <button type="button" onClick={() => act(setTwitchTitleNow)} disabled={busy} style={headerButton()}>Set title now</button>
+          <button type="button" onClick={() => act(signOutTwitch)} disabled={busy} style={headerButton()}>Sign out</button>
+        </div>
+      ) : tw.signingIn ? (
+        <div data-testid="twitch-signing-in" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={uiText(13, c.text, { lineHeight: 1.5 })}>
+            On Twitch, signed in as your channel, open{" "}
+            <a href={tw.signingIn.url} target="_blank" rel="noreferrer" style={{ color: c.amber }}>{tw.signingIn.url.replace(/^https?:\/\//, "")}</a>{" "}
+            and type this code:
+          </div>
+          <div style={uiText(24, c.heading, { fontWeight: 700, letterSpacing: 2 })}>{tw.signingIn.code}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={uiText(12, c.textMuted, { flex: 1 })}>Waiting for Twitch… the code works until {when(tw.signingIn.expiresAt)}.</span>
+            <button type="button" onClick={() => act(cancelTwitchSignIn)} disabled={busy} style={headerButton()}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 8px", alignItems: "center" }}>
+            <span style={uiText(12, c.textMuted)}>Client ID</span>
+            <input data-testid="twitch-client-id" value={clientId ?? tw.clientId} onChange={(e) => setClientId(e.target.value)} maxLength={100} style={field} placeholder="From your application on dev.twitch.tv" />
+            <span style={uiText(12, c.textMuted)}>Client Secret</span>
+            <input
+              data-testid="twitch-client-secret" type="password" autoComplete="new-password" value={secret} onChange={(e) => setSecret(e.target.value)}
+              maxLength={100} style={field} placeholder={tw.secretSet ? "Saved. Type a new one to replace it" : "Optional, but keeps you signed in"}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {appChanged && <button type="button" onClick={saveApp} disabled={busy} style={headerButton()}>Save application</button>}
+            <button type="button" data-testid="twitch-sign-in" onClick={() => act(startTwitchSignIn)} disabled={busy || !tw.clientId || appChanged} style={primaryButton(busy || !tw.clientId || appChanged)}>
+              Sign in to Twitch
+            </button>
+          </div>
+          <div style={help}>
+            Setting the title takes signing in to Twitch, through an application of your own (once): on dev.twitch.tv, open
+            Your Console → Applications → Register Your Application. Name it (say “Farmhand title”), put http://localhost as
+            its OAuth Redirect URL, pick any category, and Client Type Confidential. Copy its Client ID here, and with
+            New Secret its Client Secret, and Save application. Then Sign in to Twitch: a code shows here to type on Twitch.
+            (Without a Client Secret it still works, but Twitch may ask you to sign in again after 30 days.)
+          </div>
+          {tw.signInError && <div style={uiText(12, c.danger, { lineHeight: 1.5 })}>{tw.signInError}</div>}
+        </div>
+      )}
+      {tw.title.title && (
+        <div data-testid="twitch-title-now" style={uiText(12, c.textMuted, { lineHeight: 1.5 })}>
+          Title on Twitch: <b style={{ color: c.text }}>{tw.title.title}</b> (set at {when(tw.title.at)})
+        </div>
+      )}
+      {(tw.title.error && (extras.titleFromPrinting || tw.signedInAs)) && (
+        <div style={uiText(12, c.danger, { lineHeight: 1.5 })}>{tw.title.error}</div>
+      )}
+      {problem && <div style={uiText(12, c.danger, { lineHeight: 1.5 })}>{problem}</div>}
+    </Section>
   );
 }
