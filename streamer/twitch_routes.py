@@ -1,5 +1,5 @@
 """
-The Twitch settings window's sign-in to Twitch, for the title from what's printing (twitch_title.py), under
+The Twitch settings window's sign-in to Twitch, so Stream control's title is set on Twitch (twitch_title.py), under
 /api/stream/twitch. The application's secret and the sign-in's tokens go in and never come back out.
 """
 from __future__ import annotations
@@ -62,9 +62,10 @@ def sign_out(db: Store = Depends(get_db)):
 
 @router.post("/title")
 def set_title_now(db: Store = Depends(get_db)):
-    """Set the title from what's printing on Twitch now (live or not): what the window's Set title now does."""
+    """Set Stream control's title on Twitch now: what the window's Set title now does."""
     with answer_errors():
         if not twitch_title.app(db)["client_id"] or not twitch_title.page(db)["signed_in_as"]:
             raise ValueError("Sign in to Twitch first.")
-        twitch_title.keeper.check(db, force=True)
+        if twitch_title.keeper.check(db, force=True) is None and not twitch_title.keeper.state()["error"]:
+            raise ValueError("There's no title to set: Twitch has to be ticked in Stream control, with a title written there.")
     return twitch_title.page(db)

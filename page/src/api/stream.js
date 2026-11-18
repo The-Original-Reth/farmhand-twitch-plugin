@@ -32,12 +32,10 @@ const normalizeStream = (s) => ({
     // the holding screen, shown after the plugin's own restart while the delay fills again: { text, image, background,
     // color, font } (null colours and font: the stream's own)
     holding: { text: "Back in a minute", image: null, background: null, color: null, font: null, ...(s.settings.holding || {}) },
-    // the Twitch extras (the Twitch settings window): titleFromPrinting (with its wording: titleFormat while printing, with
-    // {prints} and {count}, and titleIdle; "" for the plugin's own), chatCommands, chatOnScreen; and whether they can be
-    // turned on yet: all of them (twitchExtrasReady), each one (twitchReady: { titleFromPrinting, chatCommands, chatOnScreen })
+    // the Twitch extras (the Twitch settings window), coming in a later version: titleFromPrinting, chatCommands,
+    // chatOnScreen; and whether they can be turned on yet: all of them (twitchExtrasReady), each one (twitchReady)
     twitch: ((t) => ({
       titleFromPrinting: !!t.title_from_printing, chatCommands: !!t.chat_commands, chatOnScreen: !!t.chat_on_screen,
-      titleFormat: t.title_format || "", titleIdle: t.title_idle || "",
     }))(s.settings.twitch || {}),
     twitchExtrasReady: !!s.settings.twitch_extras_ready,
     twitchReady: ((r) => ({
@@ -110,7 +108,6 @@ export const saveStream = async (s = {}) =>
         stream_key: s.streamKey || null, clear_key: !!s.clearKey, enabled: s.enabled, holding: s.holding, channel: s.channel,
         twitch: s.twitch ? {
           title_from_printing: s.twitch.titleFromPrinting, chat_commands: s.twitch.chatCommands, chat_on_screen: s.twitch.chatOnScreen,
-          title_format: s.twitch.titleFormat, title_idle: s.twitch.titleIdle,
         } : undefined,
       }),
     ),
@@ -118,7 +115,7 @@ export const saveStream = async (s = {}) =>
 
 export const startStream = async () => normalizeStream(await post("/stream/start"));
 
-// Signing in to Twitch, for the stream title from what's printing: { clientId, secretSet, signedInAs (the channel's
+// Signing in to Twitch, so Stream control's title is set on Twitch: { clientId, secretSet, signedInAs (the channel's
 // login, or null), signingIn: { code, url, expiresAt } | null (the code to type on Twitch), signInError,
 // title: { title (last set on Twitch), at (Date), error } }. The Client Secret and the sign-in never come back.
 const normalizeTwitch = (t) => ({

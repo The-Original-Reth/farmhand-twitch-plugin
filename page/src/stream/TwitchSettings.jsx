@@ -8,9 +8,9 @@ import {
 import { help, label12 } from "./streamStyles.js";
 
 // Everything Twitch, in a browser window of its own (?view=twitch-settings; TwitchSettingsButton opens it), so it can be
-// moved anywhere and left open: the stream key, and the Twitch extras: the title set from what's printing (with the
-// sign-in to Twitch it needs, TitleFromPrinting), and chat commands and chat on the stream, which come in a later version
-// and are shown greyed out until then. Save saves just
+// moved anywhere and left open: the stream key, the sign-in to Twitch that sets Stream control's title on Twitch
+// (StreamControlTitle), and the Twitch extras (the title set from what's printing, chat commands, chat on the stream),
+// which come in a later version and are shown greyed out until then. Save saves just
 // these (changes on the Stream page not saved yet stay as they are) and tells the Stream page, wherever it's open, to
 // show them.
 
@@ -41,8 +41,9 @@ export const twitchLinks = (channel) => channel ? [
   ["Analytics", `https://dashboard.twitch.tv/u/${channel}/analytics/channel-analytics`, "Viewers, followers and watch time"],
 ] : [];
 
-// The extras still to come: [key, name, what it will do] (the title from what's printing has its own section)
+// The extras to come: [key, name, what it will do]
 const EXTRAS = [
+  ["titleFromPrinting", "Stream title from what's printing", "Farmhand sets the Twitch title and category from the prints going on."],
   ["chatCommands", "Chat commands", "A bot answers viewers in chat, like !printers or !eta."],
   ["chatOnScreen", "Chat on the stream", "The latest Twitch chat shown over the picture."],
 ];
@@ -192,13 +193,13 @@ function TwitchSettingsForm({ keySet, channel, twitch, ready, live, busy, proble
           </div>
           <div style={help}>
             The stream's title, category and tags are set on Twitch itself, in Creator Dashboard → Stream Manager → Edit Stream
-            Info, or by the plugin from what's printing (below).
+            Info. The title is Stream control's while it sends Twitch its layout, once you're signed in (below).
           </div>
         </Section>
 
-        <TitleFromPrinting extras={extras} setExtras={setExtras} live={live} />
+        <StreamControlTitle />
 
-        <Section title="More Twitch extras">
+        <Section title="Twitch extras">
           <div style={help}>Coming in a later version of the plugin: they're shown here so you know where they'll be.</div>
           {EXTRAS.map(([k, name, what]) => (
             <label key={k} style={{ ...label12, opacity: ready[k] ? 1 : 0.6 }} title={ready[k] ? undefined : "Coming in a later version"}>
@@ -231,10 +232,9 @@ function TwitchSettingsForm({ keySet, channel, twitch, ready, live, busy, proble
 
 const when = (d) => d ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
 
-// The title from what's printing: the Twitch application the plugin signs in through, the sign-in itself (a code typed
-// on twitch.tv/activate), the extra's switch and its wording (saved with Save, with the rest), and the title last set.
-// The sign-in's own buttons act at once. `extras`, `setExtras`: the extras as being changed here.
-function TitleFromPrinting({ extras, setExtras, live }) {
+// The stream's title on Twitch, kept to Stream control's: the Twitch application the plugin signs in through, the
+// sign-in itself (a code typed on twitch.tv/activate), and the title last set. Its buttons act at once (no Save).
+function StreamControlTitle() {
   const [tw, setTw] = useState(null);
   const [problem, setProblem] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -272,39 +272,19 @@ function TitleFromPrinting({ extras, setExtras, live }) {
     }
   };
 
-  if (!tw) return <Section title="Stream title from what's printing"><div style={help}>{problem || "Loading…"}</div></Section>;
+  const title = "Stream title from Stream control";
+  if (!tw) return <Section title={title}><div style={help}>{problem || "Loading…"}</div></Section>;
   const appChanged = (clientId !== null && clientId.trim() !== tw.clientId) || secret.trim();
   return (
-    <Section title="Stream title from what's printing">
-      <label style={label12}>
-        <input
-          type="checkbox" data-testid="twitch-titleFromPrinting" checked={!!extras.titleFromPrinting}
-          onChange={(e) => setExtras((x) => ({ ...x, titleFromPrinting: e.target.checked }))}
-        />
-        Keep the Twitch title to what the farm is printing, while the stream is live
-      </label>
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 8px", alignItems: "center" }}>
-        <span style={uiText(12, c.textMuted)}>While printing</span>
-        <input
-          data-testid="twitch-title-format" value={extras.titleFormat || ""} maxLength={200} style={field}
-          placeholder="Printing now: {prints}" onChange={(e) => setExtras((x) => ({ ...x, titleFormat: e.target.value }))}
-        />
-        <span style={uiText(12, c.textMuted)}>Nothing printing</span>
-        <input
-          data-testid="twitch-title-idle" value={extras.titleIdle || ""} maxLength={200} style={field}
-          placeholder="3D print farm, live" onChange={(e) => setExtras((x) => ({ ...x, titleIdle: e.target.value }))}
-        />
-      </div>
+    <Section title={title}>
       <div style={help}>
-        {"{prints}"} becomes what each printer is printing, like “Frog on VT 796, Benchy on V2 BOG”; {"{count}"} how many printers
-        are printing. Twitch shows up to 140 characters: when there's more, the last prints become “and 3 more”. The title
-        is looked at every minute while live, and changed on Twitch only when it's different. Save to keep these.
+        While Farmhand's Stream control sends Twitch its layout, the title written in Stream control is the Twitch stream's
+        title: it's set on Twitch, and set again within seconds whenever it's changed in Stream control. That takes
+        signing in to Twitch, once.
       </div>
-
-      <div style={uiText(12, c.heading, { fontWeight: 600, marginTop: 4 })}>Signing in to Twitch</div>
       {tw.signedInAs ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span data-testid="twitch-signed-in" style={uiText(12, c.green, { flex: 1 })}>Signed in as {tw.signedInAs}</span>
+          <span data-testid="twitch-signed-in" style={uiText(12, c.green, { flex: 1 })}>Signed in to Twitch as {tw.signedInAs}</span>
           <button type="button" onClick={() => act(setTwitchTitleNow)} disabled={busy} style={headerButton()}>Set title now</button>
           <button type="button" onClick={() => act(signOutTwitch)} disabled={busy} style={headerButton()}>Sign out</button>
         </div>
@@ -339,11 +319,11 @@ function TitleFromPrinting({ extras, setExtras, live }) {
             </button>
           </div>
           <div style={help}>
-            Setting the title takes signing in to Twitch, through an application of your own (once): on dev.twitch.tv, open
-            Your Console → Applications → Register Your Application. Name it (say “Farmhand title”), put http://localhost as
-            its OAuth Redirect URL, pick any category, and Client Type Confidential. Copy its Client ID here, and with
-            New Secret its Client Secret, and Save application. Then Sign in to Twitch: a code shows here to type on Twitch.
-            (Without a Client Secret it still works, but Twitch may ask you to sign in again after 30 days.)
+            Signing in goes through an application of your own (once): on dev.twitch.tv, open Your Console → Applications →
+            Register Your Application. Name it (say “Farmhand title”), put http://localhost as its OAuth Redirect URL, pick
+            any category, and Client Type Confidential. Copy its Client ID here, and with New Secret its Client Secret, and
+            Save application. Then Sign in to Twitch: a code shows here to type on Twitch. (Without a Client Secret it still
+            works, but Twitch may ask you to sign in again after 30 days.)
           </div>
           {tw.signInError && <div style={uiText(12, c.danger, { lineHeight: 1.5 })}>{tw.signInError}</div>}
         </div>
@@ -353,9 +333,7 @@ function TitleFromPrinting({ extras, setExtras, live }) {
           Title on Twitch: <b style={{ color: c.text }}>{tw.title.title}</b> (set at {when(tw.title.at)})
         </div>
       )}
-      {(tw.title.error && (extras.titleFromPrinting || tw.signedInAs)) && (
-        <div style={uiText(12, c.danger, { lineHeight: 1.5 })}>{tw.title.error}</div>
-      )}
+      {tw.title.error && tw.signedInAs && <div style={uiText(12, c.danger, { lineHeight: 1.5 })}>{tw.title.error}</div>}
       {problem && <div style={uiText(12, c.danger, { lineHeight: 1.5 })}>{problem}</div>}
     </Section>
   );

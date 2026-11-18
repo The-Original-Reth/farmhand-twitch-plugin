@@ -22,7 +22,7 @@ async def _running(_app):
         print(f"stream: asking Stream control failed ({e})", flush=True)
     stream_control.follower.start()
     stream.resume(s, store.session_factory)  # live before the restart: live again
-    twitch_title.keeper.start()  # the Twitch title kept to what's printing, while live (when that extra is on)
+    twitch_title.keeper.start()  # the Twitch title kept to Stream control's (once signed in to Twitch)
     yield
     # (only the container stopping: it goes live again when it starts)
     stream_control.follower.stop()
