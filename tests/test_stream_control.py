@@ -94,6 +94,8 @@ def test_not_following_without_the_permission_and_carrying_on_while_farmhand_is_
     stream_control.follower.check()
     assert stream_control.follower.following() and "Farmhand" in stream_control.follower.error()
     controlled.down = False
+    stream_control.follower.check()  # Farmhand back, the design as it was: the note goes (on CT 202 it stayed)
+    assert stream_control.follower.following() and stream_control.follower.error() is None
     controlled.permissions.discard("stream:read")  # 403: stream:read not granted
     stream_control.follower.check()
     assert not stream_control.follower.following()
