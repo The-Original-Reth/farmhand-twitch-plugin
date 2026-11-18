@@ -31,7 +31,7 @@ from __future__ import annotations
 from ..store import Store
 
 from . import encoders, fonts, music, runner  # noqa: F401
-from .choices import auto_grid, rename_slideshow, save, settings  # noqa: F401
+from .choices import auto_grid, chosen, rename_slideshow, save, settings  # noqa: F401
 from .constants import DESTINATIONS, RESOLUTION_LABELS, RESOLUTIONS, SETTINGS_KEY  # noqa: F401
 from .fonts import DEFAULT_FONT, FONT, FONTS, font_file  # noqa: F401
 from .picture import TURNS_FOR, Look, command, grid, timetable, windows  # noqa: F401
@@ -47,9 +47,12 @@ def page(db: Store) -> dict:
     """Everything the Stream page shows: {settings, media (the stream folder's pictures, slideshows and music, stream_media.media),
     status, destinations, resolutions, fonts (what a square's words can be written in), test_destination (where
     the stream goes instead of Twitch while the plugin is being tried out, or None)}."""
-    from .. import config
+    from .. import config, stream_control
 
     return {
+        # Farmhand's Stream control: while following, its layout is sent and the page shows "Controlled by Stream control"
+        # in place of the layout editor ({following, revision, saved_at, title, error})
+        "stream_control": stream_control.follower.page(),
         "test_destination": config.settings.test_destination,
         "settings": settings(db),
         "media": stream_media.media(db),

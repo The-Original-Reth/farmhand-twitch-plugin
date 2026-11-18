@@ -7,7 +7,7 @@ import { usePhone } from "../lib/usePhone.js";
 import { usePrintProgress, usePrinterCameras } from "../monitor/cameras.js";
 import { StreamPreview } from "./StreamPreview.jsx";
 import { cameraOf, followCameras, printerOf } from "./shapes.js";
-import { LiveStatusPanel, MuteSwitch, StreamSwitch, WhereToPanel } from "./StreamPanels.jsx";
+import { ControlledPanel, LiveStatusPanel, MuteSwitch, StreamSwitch, WhereToPanel } from "./StreamPanels.jsx";
 import { DefaultsPanel } from "./StreamSquares.jsx";
 import { STREAM_CHANNEL, TwitchSettingsButton, openTwitchSettings } from "./TwitchSettings.jsx";
 import { MusicPanel } from "./MusicPanel.jsx";
@@ -210,6 +210,9 @@ export function StreamSection({ layouts = [], onSaveLayouts, onSlideshowRenamed,
   };
 
   const status = page.status;
+  // Farmhand's Stream control is followed: its layout is sent, so the layout editor gives way to "Controlled by Stream
+  // control" (what's changed here and not saved yet stays so, for when it lets go)
+  const following = page.streamControl.following;
   const destLabel = (k) => page.destinations.find((d) => d.key === k)?.label || k;
   // the grid's squares as the preview plays them
   const squares = shown.cells.map((cell) => {
@@ -243,16 +246,16 @@ export function StreamSection({ layouts = [], onSaveLayouts, onSlideshowRenamed,
       {/* left: what the stream looks like; right: going live and what goes into it. On a phone, one under the other,
           and the preview scrolls away with the page rather than staying over the panels */}
       <div style={{ minWidth: 0, ...(!phone && { position: "sticky", top: 0 }) }}>
-        <StreamPreview
+        {following ? <ControlledPanel control={page.streamControl} /> : <StreamPreview
           shown={shown} change={change} squares={squares} showStatus={shown.showStatus} live={status.live} liveResolution={status.resolution} resolutions={page.resolutions}
           cameras={cameras} media={page.media} fonts={page.fonts} label={label}
           ask={ask} busy={busy} onSave={saveAll} dirty={changed} onRenameSlideshow={renameShow} onRevert={discard} still={!enabled} onResync={resync} resynced={resynced && changed}
           serverClock={status.serverTime !== null && (!changed || resynced) ? { serverTime: status.serverTime, heardAt: status.heardAt, live: status.onAir } : null}
           cycle={shown.layout === "cycle" ? { all: Number(shown.secondsAll) || 0, each: Math.max(1, Number(shown.secondsEach) || 0) } : null}
-        />
+        />}
       </div>
       <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
-        <LiveStatusPanel status={status} destLabel={destLabel} destination={shown.destination} busy={busy} onStart={start} onStop={stop} off={!enabled} channel={saved.channel} />
+        <LiveStatusPanel status={status} destLabel={destLabel} destination={shown.destination} busy={busy} onStart={start} onStop={stop} off={!enabled} channel={saved.channel} following={following} />
         {aside?.(page)}
         {problem && (
           <div data-testid="stream-problem" style={uiText(13, c.danger, { lineHeight: 1.5 })}>
@@ -262,10 +265,11 @@ export function StreamSection({ layouts = [], onSaveLayouts, onSlideshowRenamed,
 
         <WhereToPanel
           destination={shown.destination} destinations={page.destinations} onDestination={(destination) => change({ destination })}
-          delay={shown.delay} onDelay={(v) => change({ delay: v })} live={status.live}
+          delay={shown.delay} onDelay={following ? null : (v) => change({ delay: v })} live={status.live}
           settings={<TwitchSettingsButton keySet={saved.keySet} channel={saved.channel} onOpen={openTwitchSettings} />}
         />
 
+        {!following && (<>
         <HoldingScreenPanel shown={shown} change={change} media={page.media} fonts={page.fonts} saved={saved.holding} onSave={saveHolding} busy={busy} />
         <DefaultsPanel shown={shown} change={change} cameras={cameras} finding={finding && !cameras.length} count={inGrid.length} fonts={page.fonts} />
         <MusicPanel shown={shown} change={change} media={page.media} ask={ask} busy={busy} live={status.live} onAir={status.music} heardAt={status.heardAt} enabled={enabled} control={music} onWaiting={setMusicWaits} muted={muted} savedVolume={saved.musicVolume} />
@@ -292,6 +296,7 @@ export function StreamSection({ layouts = [], onSaveLayouts, onSlideshowRenamed,
             </button>
           </div>
         )}
+        </>)}
       </div>
     </div>
     </div>

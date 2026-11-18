@@ -81,7 +81,7 @@ def start(db: Store, chosen: dict, ffmpeg: str, folder: str):
     picture = None
     if mine.get("image"):
         try:
-            picture = str(stream_media.picture_path(db, None, mine["image"]))
+            picture = str(stream_media.sent_picture_path(db, mine["image"]))
             if svg.is_svg(picture):  # (drawn as a PNG first: Pillow doesn't read SVG)
                 picture = svg.copy_for_stream(picture, os.path.join(folder, "holding-picture"), None)
         except (ValueError, OSError, LookupError):

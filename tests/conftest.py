@@ -46,13 +46,15 @@ def plugin(farmhand, tmp_path, monkeypatch):
 @pytest.fixture()
 def stream_fresh(plugin):
     """Each stream test starts with no sign-in under way and the stream folder unread, and ends with the stream stopped."""
-    from streamer import farm, stream_media
+    from streamer import farm, stream_control, stream_media
     from streamer.live_stream import stream
 
     stream_media.forget()
     farm._noted(None)
+    stream_control.follower.reset()
     yield
     stream.stop()
+    stream_control.follower.reset()
 
 
 @pytest.fixture()

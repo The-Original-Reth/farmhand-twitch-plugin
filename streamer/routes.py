@@ -5,7 +5,7 @@ import os
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
-from . import live_stream, storage, stream_media
+from . import live_stream, storage, stream_control, stream_media
 from .errors import answer_errors
 from .schemas import SlideshowIn, SlideshowOrderIn, StreamSettingsIn
 from .store import Store, session_factory, store
@@ -51,14 +51,15 @@ def save_settings(payload: StreamSettingsIn, db: Store = Depends(get_db)):
     stream off (enabled: false) stops it.
     """
     with answer_errors():
-        before = live_stream.settings(db)
-        after = live_stream.save(
+        before = live_stream.chosen(db)  # (what the stream sends: while Stream control is followed, its layout is, not this)
+        live_stream.save(
             db, destination=payload.destination, chosen=payload.cameras, show_status=payload.show_status, layout=payload.layout,
             seconds_all=payload.seconds_all, seconds_each=payload.seconds_each, resolution=payload.resolution,
             border_color=payload.border_color, background=payload.background, font=payload.font, color=payload.color, enabled=payload.enabled, cols=payload.cols, rows=payload.rows, cells=payload.cells,
             music=payload.music, music_volume=payload.music_volume, music_shuffle=payload.music_shuffle, delay=payload.delay, twitch=payload.twitch, channel=payload.channel, holding=payload.holding,
             stream_key=payload.stream_key, clear_key=payload.clear_key,
         )
+        after = live_stream.chosen(db)
         live = live_stream.stream.status()["live"]
         if live and not after["enabled"]:  # turned off: nothing streams
             live_stream.stream.stop()
@@ -96,7 +97,10 @@ def _media(call):
 
 
 def _restart_if_used(db: Store, slideshow: str | None, image: str | None = None) -> None:
-    """Pictures changed: the stream starts again with them, when it's live and a square shows them."""
+    """Pictures changed: the stream starts again with them, when it's live and a square shows them. (Not while Stream
+    control is followed: the stream shows its pictures then, not the stream folder's.)"""
+    if stream_control.follower.following():
+        return
     def on_it(c) -> bool:  # (its own picture, or one of its more pictures, a slideshow screen's too)
         layers = [*(c.get("layers") or []), *(x for ls in (c.get("slide_layers") or {}).values() for x in ls)]
         return c.get("image") == image or any(x.get("type") == "picture" and x.get("image") == image for x in layers)
@@ -276,3 +280,38 @@ def delete_track(name: str, confirm: bool = Query(False), db: Store = Depends(ge
     _media(lambda: stream_media.remove_track(db, name))
     return live_stream.page(db)
 
+
+
+# ------------------------------------------------------------------ Farmhand's Stream control
+# Farmhand starts and stops the stream from its Stream control page (the manifest's stream_control path). Each answers
+# {live, following (Stream control's design is sent, not the plugin's own layout), error, watch_url}.
+
+control = APIRouter(prefix="/api/stream-control", tags=["stream-control"])
+
+
+def _control_status(db: Store) -> dict:
+    status, channel = live_stream.stream.status(), live_stream.settings(db)["channel"]
+    return {"live": status["live"], "following": stream_control.follower.following(),
+            "error": status["error"] or stream_control.follower.error(),
+            "watch_url": f"https://www.twitch.tv/{channel}" if channel else None}
+
+
+@control.get("")
+def control_status(db: Store = Depends(get_db)):
+    return _control_status(db)
+
+
+@control.post("/start")
+def control_start(db: Store = Depends(get_db)):
+    """Go live, with Stream control's design when it's followed (asked of Farmhand now, so it's the latest). 422 says
+    why not, in plain words (no stream key yet, say)."""
+    stream_control.follower.check()
+    with answer_errors():
+        live_stream.stream.go_live(db, session_factory)
+    return _control_status(db)
+
+
+@control.post("/stop")
+def control_stop(db: Store = Depends(get_db)):
+    live_stream.stream.stop()
+    return _control_status(db)

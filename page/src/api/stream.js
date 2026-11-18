@@ -72,6 +72,15 @@ const normalizeStream = (s) => ({
     // a new layout is on its way (waiting a moment for more changes, then warming up beside the one going out)
     changing: !!s.status.changing,
   },
+  // Farmhand's Stream control: while following, its layout is sent (not this page's) and the layout editor gives way to
+  // "Controlled by Stream control". { following, revision, savedAt, title, error }
+  streamControl: {
+    following: !!s.stream_control?.following,
+    revision: s.stream_control?.revision ?? null,
+    savedAt: s.stream_control?.saved_at || null,
+    title: s.stream_control?.title || null,
+    error: s.stream_control?.error || null,
+  },
   // being tried out: the rtmp:// address the stream goes to instead of Twitch, or null
   testDestination: s.test_destination || null,
   destinations: s.destinations,
