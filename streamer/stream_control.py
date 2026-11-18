@@ -44,6 +44,9 @@ class Follower:
         self._design: dict | None = None  # Stream control's design while it's followed
         self._got: tuple | None = None  # (revision, media) of the files last copied in
         self._error: str | None = None
+        # what couldn't be copied the last time the files were (kept while they're the same; never a note that Farmhand
+        # couldn't be asked, which goes as soon as it answers again)
+        self._copy_problem: str | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -89,7 +92,7 @@ class Follower:
     def reset(self) -> None:
         """Back to the plugin's own layout, nothing asked yet (the tests' fresh start)."""
         with self._lock:
-            self._design, self._got, self._error = None, None, None
+            self._design, self._got, self._error, self._copy_problem = None, None, None, None
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -118,7 +121,13 @@ class Follower:
             got = (design.get("revision"), json.dumps(media, sort_keys=True))
             with self._lock:
                 fresh = got != self._got
-            problem = self._copy_media(media) if fresh else self.error()
+            if fresh:
+                problem = self._copy_media(media)
+                with self._lock:
+                    self._copy_problem = problem
+            else:
+                with self._lock:
+                    problem = self._copy_problem
             self._follow(design, got, problem)
 
     def _follow(self, design: dict | None, got: tuple | None, problem: str | None) -> None:
