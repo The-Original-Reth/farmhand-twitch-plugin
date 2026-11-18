@@ -32,12 +32,17 @@ const normalizeStream = (s) => ({
     // the holding screen, shown after the plugin's own restart while the delay fills again: { text, image, background,
     // color, font } (null colours and font: the stream's own)
     holding: { text: "Back in a minute", image: null, background: null, color: null, font: null, ...(s.settings.holding || {}) },
-    // the Twitch extras (the Twitch settings window), all coming in a later version: titleFromPrinting, chatCommands,
-    // chatOnScreen; and whether they can be turned on yet
+    // the Twitch extras (the Twitch settings window): titleFromPrinting (with its wording: titleFormat while printing, with
+    // {prints} and {count}, and titleIdle; "" for the plugin's own), chatCommands, chatOnScreen; and whether they can be
+    // turned on yet: all of them (twitchExtrasReady), each one (twitchReady: { titleFromPrinting, chatCommands, chatOnScreen })
     twitch: ((t) => ({
       titleFromPrinting: !!t.title_from_printing, chatCommands: !!t.chat_commands, chatOnScreen: !!t.chat_on_screen,
+      titleFormat: t.title_format || "", titleIdle: t.title_idle || "",
     }))(s.settings.twitch || {}),
     twitchExtrasReady: !!s.settings.twitch_extras_ready,
+    twitchReady: ((r) => ({
+      titleFromPrinting: !!r.title_from_printing, chatCommands: !!r.chat_commands, chatOnScreen: !!r.chat_on_screen,
+    }))(s.settings.twitch_ready || {}),
     // the Twitch channel's name (twitch.tv/<name>), for the Watch, Chat, Stream Manager and Analytics links; null: none set
     channel: s.settings.channel || null,
     keySet: s.settings.key_set,
@@ -105,12 +110,31 @@ export const saveStream = async (s = {}) =>
         stream_key: s.streamKey || null, clear_key: !!s.clearKey, enabled: s.enabled, holding: s.holding, channel: s.channel,
         twitch: s.twitch ? {
           title_from_printing: s.twitch.titleFromPrinting, chat_commands: s.twitch.chatCommands, chat_on_screen: s.twitch.chatOnScreen,
+          title_format: s.twitch.titleFormat, title_idle: s.twitch.titleIdle,
         } : undefined,
       }),
     ),
   );
 
 export const startStream = async () => normalizeStream(await post("/stream/start"));
+
+// Signing in to Twitch, for the stream title from what's printing: { clientId, secretSet, signedInAs (the channel's
+// login, or null), signingIn: { code, url, expiresAt } | null (the code to type on Twitch), signInError,
+// title: { title (last set on Twitch), at (Date), error } }. The Client Secret and the sign-in never come back.
+const normalizeTwitch = (t) => ({
+  clientId: t.client_id || "", secretSet: !!t.secret_set, signedInAs: t.signed_in_as || null,
+  signingIn: t.signing_in ? { code: t.signing_in.code, url: t.signing_in.url, expiresAt: new Date(t.signing_in.expires_at * 1000) } : null,
+  signInError: t.sign_in_error || null,
+  title: { title: t.title?.title || null, at: t.title?.at ? new Date(t.title.at * 1000) : null, error: t.title?.error || null },
+});
+export const getTwitch = async () => normalizeTwitch(await request("/stream/twitch"));
+// { clientId ("": forget it, and the sign-in), clientSecret (blank: keep the saved one), clearSecret }
+export const saveTwitchApp = async (a = {}) =>
+  normalizeTwitch(await request("/stream/twitch/app", jsonBody("PUT", { client_id: a.clientId, client_secret: a.clientSecret || null, clear_secret: !!a.clearSecret })));
+export const startTwitchSignIn = async () => normalizeTwitch(await post("/stream/twitch/sign-in"));
+export const cancelTwitchSignIn = async () => normalizeTwitch(await post("/stream/twitch/sign-in/cancel"));
+export const signOutTwitch = async () => normalizeTwitch(await post("/stream/twitch/sign-out"));
+export const setTwitchTitleNow = async () => normalizeTwitch(await post("/stream/twitch/title"));
 export const stopStream = async () => normalizeStream(await post("/stream/stop"));
 
 // The stream folder's pictures, as files: single pictures in images/, each slideshow a folder in slideshows/ (PNG, JPEG,

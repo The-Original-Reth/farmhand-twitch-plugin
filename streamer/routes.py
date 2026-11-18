@@ -5,7 +5,7 @@ import os
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
-from . import live_stream, storage, stream_control, stream_media
+from . import live_stream, storage, stream_control, stream_media, twitch_title
 from .errors import answer_errors
 from .schemas import SlideshowIn, SlideshowOrderIn, StreamSettingsIn
 from .store import Store, session_factory, store
@@ -67,6 +67,9 @@ def save_settings(payload: StreamSettingsIn, db: Store = Depends(get_db)):
             _restart_if_live(db)
         elif live and any(before[k] != after[k] for k in MUSIC):
             live_stream.stream.music_settings(after)
+    if payload.twitch is not None:
+        twitch_title.keeper.forget_title()  # (its wording may have changed: sent again)
+        twitch_title.keeper.poke()
     return live_stream.page(db)
 
 
@@ -75,6 +78,7 @@ def go_live(db: Store = Depends(get_db)):
     """Go live with what's saved. 422 says why not (no key, no cameras, a camera that can't be streamed...)."""
     with answer_errors():
         live_stream.stream.go_live(db, session_factory)
+    twitch_title.keeper.poke()  # (the title set as the stream goes live)
     return live_stream.page(db)
 
 

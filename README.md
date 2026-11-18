@@ -50,10 +50,27 @@ What it does:
 **Twitch settings** (a window of its own, opened from the page) hold the stream key and your **channel's name**. The
 name gives the live panel its links, as the YouTube plugin has Watch and YouTube Studio: **Watch** (the channel),
 **Chat** (its chat in a window of its own), **Stream Manager** (Twitch's dashboard) and **Analytics**. The stream key
-doesn't say whose channel it is, so the name is asked for. The stream's title, category and
-tags are set on Twitch itself (Creator Dashboard → Stream Manager → Edit Stream Info) for now. Three Twitch extras have
-their place in the settings already, shown greyed out until they're built: the **stream title from what's printing**,
-**chat commands** (a bot answering `!printers`, `!eta`…), and **chat on the stream**.
+doesn't say whose channel it is, so the name is asked for. The stream's category and tags are set on Twitch itself
+(Creator Dashboard → Stream Manager → Edit Stream Info).
+
+**Stream title from what's printing** (a Twitch extra, in Twitch settings): while live, the plugin keeps the channel's
+title to what the farm is printing, e.g. `Printing now: Frog on VT 796, Benchy on V2 BOG`, and to an idle title when
+nothing is. Both wordings can be changed: `{prints}` is what each printer is printing (the file's name without what
+the slicer adds), `{count}` how many printers are printing; past Twitch's 140 characters the last prints become "and 3
+more". It's looked at every minute and changed on Twitch only when it's different (and once on going live).
+
+Changing the title takes Twitch's own API, so it signs in to Twitch as your channel, once:
+
+1. On [dev.twitch.tv](https://dev.twitch.tv/console/apps), Register Your Application: any name, OAuth Redirect URL
+   `http://localhost` (not used), any category, Client Type **Confidential**.
+2. In Twitch settings, paste its **Client ID** and (with New Secret) its **Client Secret**, and Save application. Without a
+   secret it works too, but Twitch may ask you to sign in again after 30 days.
+3. **Sign in to Twitch**: a code shows; type it on [twitch.tv/activate](https://www.twitch.tv/activate) as your channel.
+
+It's Twitch's device sign-in, so nothing has to reach the plugin from outside. The secret and the sign-in stay in the
+plugin's settings file and are never shown again; the sign-in is checked with Twitch every hour. Two more Twitch extras
+have their place in the settings already, greyed out until they're built: **chat commands** (a bot answering
+`!printers`, `!eta`…) and **chat on the stream**.
 
 The stream goes to Twitch's global ingest over RTMPS (`rtmps://ingest.global-contribute.live-video.net:443/app/`), which
 picks the nearest Twitch server, at 720p (2500 kbit/s) or 1080p (3500 kbit/s), 15 frames a second, a keyframe every 2

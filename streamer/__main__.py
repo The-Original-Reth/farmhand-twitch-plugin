@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 
-from . import camera_watch, config, save_location, store, stream_control
+from . import camera_watch, config, save_location, store, stream_control, twitch_title
 from .app import app
 from .live_stream import stream
 
@@ -22,6 +22,7 @@ async def _running(_app):
         print(f"stream: asking Stream control failed ({e})", flush=True)
     stream_control.follower.start()
     stream.resume(s, store.session_factory)  # live before the restart: live again
+    twitch_title.keeper.start()  # the Twitch title kept to what's printing, while live (when that extra is on)
     yield
     # (only the container stopping: it goes live again when it starts)
     stream_control.follower.stop()
