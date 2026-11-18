@@ -70,12 +70,12 @@ def test_the_channel_name_is_kept_from_a_name_or_an_address(api):
     assert api.put("/api/stream", json={"channel": ""}).json()["settings"]["channel"] is None
 
 
-def test_the_chat_extras_are_kept_but_cant_be_turned_on_yet(api):
+def test_the_twitch_extras_are_kept_but_cant_be_turned_on_yet(api):
     page = api.get("/api/stream").json()
-    assert page["settings"]["twitch"] == {"title_from_printing": False, "chat_commands": False, "chat_on_screen": False,
-                                          "title_format": "", "title_idle": ""}
+    assert page["settings"]["twitch"] == {"title_from_printing": False, "chat_commands": False, "chat_on_screen": False}
     assert page["settings"]["twitch_extras_ready"] is False
-    assert page["settings"]["twitch_ready"] == {"title_from_printing": True, "chat_commands": False, "chat_on_screen": False}
+    assert page["settings"]["twitch_ready"] == {"title_from_printing": False, "chat_commands": False, "chat_on_screen": False}
+    assert api.put("/api/stream", json={"twitch": {"title_from_printing": True}}).status_code == 422
     r = api.put("/api/stream", json={"twitch": {"chat_commands": True}})
     assert r.status_code == 422 and "later version" in r.json()["detail"]
     assert api.put("/api/stream", json={"twitch": {"chat_commands": False}}).status_code == 200

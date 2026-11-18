@@ -1,6 +1,6 @@
 """
-The Twitch extra "Stream title from what's printing": while the stream is live, the channel's title on Twitch is kept
-to what the farm is printing ("Printing now: Frog on VT 796, Benchy on V2 BOG"), or the idle title when nothing is.
+The Twitch stream's title, kept to Stream control's: while Farmhand's Stream control sends Twitch its layout, the title
+written there (its design's title) is set as the Twitch channel's title, and set again whenever it's changed there.
 
 Changing a channel's title takes Twitch's own API, signed in as the channel (scope channel:manage:broadcast). The
 operator registers an application on https://dev.twitch.tv/console/apps once and gives its Client ID (and, for a
@@ -9,13 +9,12 @@ code flow: the plugin shows a code, the operator types it on twitch.tv/activate,
 Nothing needs to reach the plugin from outside the LAN.
 
 The application's secret and the sign-in's tokens are kept in the plugin's settings file (mode 600) and never
-answered. The title is looked at every CHECK_EVERY seconds while live, and only sent when it changed; the sign-in is
+answered. Stream control's title is looked at every CHECK_EVERY seconds, and only sent when it changed; the sign-in is
 checked with Twitch every VALIDATE_EVERY seconds, as Twitch asks of apps.
 """
 from __future__ import annotations
 
 import json
-import os
 import re
 import threading
 import time
@@ -23,7 +22,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import farm
 from .store import Store, store
 
 ID = "https://id.twitch.tv/oauth2"
@@ -32,12 +30,10 @@ SCOPE = "channel:manage:broadcast"
 APP_KEY = "twitch_app"  # {client_id, client_secret}
 AUTH_KEY = "twitch_auth"  # {access_token, refresh_token, expires_at, login, user_id}
 TITLE_MAX = 140  # Twitch's stream title
-CHECK_EVERY = 60  # seconds between looks at what's printing, while live
+CHECK_EVERY = 10  # seconds between looks at Stream control's title
 VALIDATE_EVERY = 3600  # seconds between checks of the sign-in with Twitch
 TIMEOUT = 10
 CLIENT_ID = re.compile(r"^[A-Za-z0-9]{10,60}$")
-DEFAULT_FORMAT = "Printing now: {prints}"
-DEFAULT_IDLE = "3D print farm, live"
 
 
 class TwitchError(Exception):
@@ -275,61 +271,11 @@ def _whoami(token: str, client_id: str) -> dict:
 sign_in = SignIn()
 
 
-# ------------------------------------------------------------------ the title
-
-
-_EXT = re.compile(r"\.(b?gcode|gco|g|3mf|stl)$", re.I)
-# what slicers add to a print's file name: nozzle, layer height, filament, printer, print time ("_0.4n_0.2mm_PLA_MK4S_1h20m")
-_SLICER = re.compile(r"[_ -]+(\d+(\.\d+)?(n|mm)|pla|petg|abs|asa|tpu|pc|pa|nylon|cf|hips|mk\d\w*|mini\w*|xl|core\w*|"
-                     r"\d+h\d*m?|\d+m|\d+d\d*h?\d*m?)(?=[_ -]|$)", re.I)
-
-
-def model_name(file: str | None) -> str | None:
-    """What's being printed, from its file's name: "Frog" for "Frog_0.4n_0.2mm_PLA_MK4S_1h20m.bgcode"."""
-    if not file:
-        return None
-    name = _EXT.sub("", os.path.basename(str(file).replace("\\", "/")))
-    for _ in range(10):
-        shorter = _SLICER.sub("", name)
-        if shorter == name:
-            break
-        name = shorter
-    name = re.sub(r"[_]+", " ", name).strip(" -")
-    return name or None
-
-
-def compose(printing: list[tuple[str, str | None]], fmt: str, idle: str) -> str:
-    """The title: `fmt` with {prints} ("Frog on VT 796, Benchy on V2 BOG") and {count} (how many printers are printing),
-    or `idle` when nothing is; kept within TITLE_MAX ("…and 3 more")."""
-    if not printing:
-        return (idle.strip() or DEFAULT_IDLE)[:TITLE_MAX]
-    fmt = fmt.strip() or DEFAULT_FORMAT
-    parts = [f"{model} on {printer}" if model else printer for printer, model in printing]
-    for shown in range(len(parts), 0, -1):
-        prints = ", ".join(parts[:shown]) + (f" and {len(parts) - shown} more" if shown < len(parts) else "")
-        title = fmt.replace("{prints}", prints).replace("{count}", str(len(parts))).strip()
-        if len(title) <= TITLE_MAX:
-            return title
-    return fmt.replace("{prints}", f"{len(parts)} prints").replace("{count}", str(len(parts))).strip()[:TITLE_MAX]
-
-
-def farm_title(db: Store, fmt: str, idle: str) -> str:
-    """The title from what the farm is printing now (every printer Farmhand knows; one that can't be asked is left out)."""
-    from .live_stream.sources import known  # (not at the top: the engine imports this module's neighbours)
-
-    printing = []
-    for pid, printer in sorted(known(db).items(), key=lambda kv: str(kv[1].get("name") or "").lower()):
-        try:
-            p = farm.print_of(int(pid))
-        except ValueError:
-            continue
-        if p and p.get("state") == "printing":
-            printing.append((str(printer.get("name") or f"Printer {pid}"), model_name(p.get("file"))))
-    return compose(printing, fmt, idle)
+# ------------------------------------------------------------------ the title, kept to Stream control's
 
 
 class TitleKeeper:
-    """Keeps the channel's title to what's printing while the stream is live and the extra is on."""
+    """Keeps the channel's title to Stream control's, while Stream control sends Twitch its layout."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -350,7 +296,7 @@ class TitleKeeper:
             self._sent = None
 
     def poke(self) -> None:
-        """Look again now (signed in, settings saved, gone live)."""
+        """Look again now (signed in, gone live)."""
         self._wake.set()
 
     def start(self) -> None:
@@ -374,29 +320,27 @@ class TitleKeeper:
             self._wake.clear()
 
     def check(self, db: Store, force: bool = False) -> str | None:
-        """Set the title on Twitch if it should change now: the title sent, or None (nothing to do). `force`: even
-        while not live, and even when it's what was sent last."""
-        from .live_stream import choices, stream
+        """Set Stream control's title on Twitch if it changed: the title sent, or None (nothing to do: not following
+        Stream control, no title written there, or not signed in). `force`: even when it's what was sent last."""
+        from .live_stream import choices
 
-        extras = choices.settings(db)["twitch"]
-        if not extras.get("title_from_printing") and not force:
-            return None
-        if not force and not stream.status()["live"]:
+        chosen = choices.chosen(db)
+        title = (chosen.get("title") or "").strip()[:TITLE_MAX] if chosen.get("following") else ""
+        if not title:
             with self._lock:
-                self._sent = None  # (sent again on going live: it may have been changed on Twitch meanwhile)
+                self._sent = None  # (sent again once there's one: it may have been changed on Twitch meanwhile)
             return None
         a = _auth(db)
         if not a:
             with self._lock:
-                self._error = "Sign in to Twitch in Twitch settings, so the plugin can set the title."
+                self._error = "Sign in to Twitch in Twitch settings, so Stream control's title can be set on Twitch."
             return None
+        with self._lock:
+            if title == self._sent and not force:
+                return None
         try:
             if time.time() - self._validated > VALIDATE_EVERY:
                 self._validate(db)
-            title = farm_title(db, extras.get("title_format") or "", extras.get("title_idle") or "")
-            with self._lock:
-                if title == self._sent and not force:
-                    return None
             status, answer = _call(db, "PATCH", f"/channels?broadcaster_id={urllib.parse.quote(str(a['user_id']))}",
                                    {"title": title})
             if status not in (200, 204):

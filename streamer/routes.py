@@ -67,9 +67,6 @@ def save_settings(payload: StreamSettingsIn, db: Store = Depends(get_db)):
             _restart_if_live(db)
         elif live and any(before[k] != after[k] for k in MUSIC):
             live_stream.stream.music_settings(after)
-    if payload.twitch is not None:
-        twitch_title.keeper.forget_title()  # (its wording may have changed: sent again)
-        twitch_title.keeper.poke()
     return live_stream.page(db)
 
 

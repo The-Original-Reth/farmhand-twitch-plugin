@@ -1,6 +1,6 @@
 """
-The Twitch extra "Stream title from what's printing" (twitch_title.py): the sign-in to Twitch (device code flow), the
-title built from what the farm prints, and it set on the channel while live. Twitch is a stand-in (FakeTwitch).
+The Twitch stream's title kept to Stream control's (twitch_title.py): the sign-in to Twitch (device code flow), and
+Stream control's title set on the channel, again whenever it changes. Twitch is a stand-in (FakeTwitch).
 """
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import time
 import pytest
 
 from streamer import store, twitch_title
-from streamer.live_stream.sources import remember
 
 from .conftest import wait_until
 
@@ -74,38 +73,6 @@ def signed_in(api, twitch):
     assert wait_until(lambda: api.get("/api/stream/twitch").json()["signed_in_as"] == "farmtest", timeout=5)
 
 
-# ------------------------------------------------------------------ the title, from what's printing
-
-
-@pytest.mark.parametrize("file, name", [
-    ("Frog.gcode", "Frog"),
-    ("/gcodes/Benchy_0.4n_0.2mm_PLA_MK4S_1h20m.bgcode", "Benchy"),
-    ("Cable clip_PETG_2h5m.gcode", "Cable clip"),
-    ("plate_1.3mf", "plate 1"),
-    (None, None),
-])
-def test_a_prints_name_is_its_files_without_what_the_slicer_adds(file, name):
-    assert twitch_title.model_name(file) == name
-
-
-def test_the_title_says_whats_printing_and_fits_twitch():
-    assert twitch_title.compose([], "", "") == twitch_title.DEFAULT_IDLE
-    assert twitch_title.compose([], "", "Farm resting") == "Farm resting"
-    assert twitch_title.compose([("VT 796", "Frog"), ("V2 BOG", None)], "", "") == "Printing now: Frog on VT 796, V2 BOG"
-    assert twitch_title.compose([("VT 796", "Frog")], "{count} printing: {prints} | !farm", "") == "1 printing: Frog on VT 796 | !farm"
-    many = [(f"Printer {i}", f"A rather long model name {i}") for i in range(12)]
-    title = twitch_title.compose(many, "", "")
-    assert len(title) <= twitch_title.TITLE_MAX and title.endswith("more") and "Printer 0" in title
-
-
-def test_the_farm_title_asks_every_printer_farmhand_knows(plugin, farmhand):
-    remember(store.store(), {"printers": list(farmhand.cameras.values())})
-    farmhand.prints[2] = {"state": "printing", "progress": 3, "file": "Hook_0.6n_PETG.bgcode", "error": None}
-    assert twitch_title.farm_title(store.store(), "", "") == "Printing now: Hook on Core One, Frog on VT 1190"
-    farmhand.prints[1] = farmhand.prints[2] = {"state": None, "progress": None, "file": None, "error": None}
-    assert twitch_title.farm_title(store.store(), "", "Idle farm") == "Idle farm"
-
-
 # ------------------------------------------------------------------ signing in
 
 
@@ -137,46 +104,64 @@ def test_a_sign_in_said_no_to_on_twitch_says_so(api, twitch):
     assert api.get("/api/stream/twitch").json()["signing_in"] is None
 
 
-# ------------------------------------------------------------------ the title kept on Twitch
+# ------------------------------------------------------------------ Stream control's title kept on Twitch
 
 
-def test_the_title_is_set_while_live_and_only_when_it_changes(api, twitch, farmhand, monkeypatch):
-    from streamer.live_stream import stream
+@pytest.fixture()
+def control(monkeypatch):
+    """Stream control as the plugin reads it (choices.chosen): following or not, and its title."""
+    from streamer.live_stream import choices
 
-    remember(store.store(), {"printers": list(farmhand.cameras.values())})
-    signed_in(api, twitch)
-    live = {"live": False}
-    monkeypatch.setattr(stream, "status", lambda: live)
+    now = {"following": True, "title": "Printing 24/7 - unless we forget to change the plate"}
+    real = choices.chosen
+    monkeypatch.setattr(choices, "chosen", lambda db: {**real(db), **now})
+    return now
+
+
+def test_stream_controls_title_is_set_on_twitch_and_again_when_it_changes(api, twitch, control):
     keeper = twitch_title.keeper
-    assert keeper.check(store.store()) is None and twitch.titles == []  # (the extra is off)
-    assert api.put("/api/stream", json={"twitch": {"title_from_printing": True, "title_idle": "Farm resting"}}).status_code == 200
-    assert keeper.check(store.store()) is None and twitch.titles == []  # (not live)
-    live["live"] = True
-    assert keeper.check(store.store()) == "Printing now: Frog on VT 1190"
-    assert keeper.check(store.store()) is None and twitch.titles == ["Printing now: Frog on VT 1190"]  # (no change)
-    farmhand.prints[1] = {"state": None, "progress": None, "file": None, "error": None}
-    assert keeper.check(store.store()) == "Farm resting"
+    assert keeper.check(store.store()) is None and twitch.titles == []  # (not signed in)
+    assert "Sign in" in api.get("/api/stream/twitch").json()["title"]["error"]
+    signed_in(api, twitch)
+    assert keeper.check(store.store()) == "Printing 24/7 - unless we forget to change the plate"
+    assert keeper.check(store.store()) is None  # (no change: not sent again)
+    control["title"] = "Night shift"
+    assert keeper.check(store.store()) == "Night shift"
+    assert twitch.titles == ["Printing 24/7 - unless we forget to change the plate", "Night shift"]
     page = api.get("/api/stream/twitch").json()
-    assert page["title"]["title"] == "Farm resting" and page["title"]["error"] is None
+    assert page["title"]["title"] == "Night shift" and page["title"]["error"] is None
+    # not following Stream control (or no title there): Twitch's title left as it is; sent again once there's one
+    control["following"] = False
+    assert keeper.check(store.store()) is None
+    control.update(following=True, title="  ")
+    assert keeper.check(store.store()) is None
+    control["title"] = "Night shift"
+    assert keeper.check(store.store()) == "Night shift"
+    # past Twitch's 140 characters: cut
+    control["title"] = "x" * 200
+    assert keeper.check(store.store()) == "x" * 140
     # an access token Twitch no longer takes is refreshed and the call made again
     twitch.expired_tokens.add(store.store().json(twitch_title.AUTH_KEY)["access_token"])
-    farmhand.prints[1] = {"state": "printing", "progress": 1, "file": "Owl.gcode", "error": None}
-    assert keeper.check(store.store()) == "Printing now: Owl on VT 1190"
+    control["title"] = "Day shift"
+    assert keeper.check(store.store()) == "Day shift"
     assert any(c[2] and c[2].get("grant_type") == "refresh_token" for c in twitch.calls)
 
 
-def test_set_title_now_and_whats_wrong_is_said(api, twitch, farmhand):
-    remember(store.store(), {"printers": list(farmhand.cameras.values())})
+def test_set_title_now_and_whats_wrong_is_said(api, twitch, control):
     assert api.post("/api/stream/twitch/title").status_code == 422  # (not signed in)
     signed_in(api, twitch)
     page = api.post("/api/stream/twitch/title").json()
-    assert page["title"]["title"] == "Printing now: Frog on VT 1190" and twitch.titles == ["Printing now: Frog on VT 1190"]
+    assert page["title"]["title"] == control["title"] and twitch.titles == [control["title"]]
+    assert api.post("/api/stream/twitch/title").json()["title"]["title"] == control["title"] and len(twitch.titles) == 2
+    control["following"] = False
+    r = api.post("/api/stream/twitch/title")
+    assert r.status_code == 422 and "ticked in Stream control" in r.json()["detail"]
+    control["following"] = True
     store.store().put_json(twitch_title.AUTH_KEY, {**store.store().json(twitch_title.AUTH_KEY), "user_id": "999"})
-    page = api.post("/api/stream/twitch/title").json()
-    assert page["title"]["error"] == "Twitch didn't change the title (not found)."
+    assert api.post("/api/stream/twitch/title").json()["title"]["error"] == "Twitch didn't change the title (not found)."
 
 
-def test_title_wording_is_checked(api):
-    assert api.put("/api/stream", json={"twitch": {"title_format": "x" * 201}}).status_code == 422
-    r = api.put("/api/stream", json={"twitch": {"title_format": "  Live: {prints}  "}})
-    assert r.json()["settings"]["twitch"]["title_format"] == "Live: {prints}"
+def test_the_title_isnt_taken_from_the_plugins_own_layout(api, twitch, plugin):
+    """Not following Stream control (the real chosen()): nothing is set on Twitch."""
+    signed_in(api, twitch)
+    assert twitch_title.keeper.check(store.store()) is None and twitch.titles == []
