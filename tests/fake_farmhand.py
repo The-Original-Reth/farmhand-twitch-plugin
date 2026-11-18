@@ -46,6 +46,7 @@ class FakeFarmhand:
         self.design: dict | None = None
         self.media = {"images": [], "slideshows": [], "music": [], "error": None}
         self.files: dict[str, bytes] = {}
+        self.files_busy_for = 0  # the next this-many file downloads get 429 (Retry-After: 1)
         self.down = False  # True: nothing answers (Farmhand stopped)
         self.permissions = set(EVERYTHING)
         self.busy_for = 0  # the next this-many calls get 429
@@ -143,6 +144,9 @@ class FakeFarmhand:
             name = unquote(path.removeprefix("/stream/"))
             if not self.allowed(h, "stream:read"):
                 return
+            if self.files_busy_for > 0:
+                self.files_busy_for -= 1
+                return self.send(h, 429, {"detail": "This plugin is asking Farmhand too often."}, {"Retry-After": "1"})
             if self.design is None or name not in self.files:
                 return self.send(h, 404, {"detail": "That file isn't there."})
             return self.send_bytes(h, self.files[name])

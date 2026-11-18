@@ -36,7 +36,8 @@ def controlled(farmhand):
     """Stream control on, with this plugin ticked: a design with a picture, a slideshow (and a blank screen) and a track."""
     farmhand.design = design()
     farmhand.media = {"images": ["logo.png"], "slideshows": [{"name": "Finished prints", "images": ["blank:1", "frog.jpg"]}],
-                      "music": ["beat.mp3"], "error": None}
+                      "music": ["beat.mp3"], "error": None,
+                      "stamps": {"images/logo.png": "4-1", "slideshows/Finished prints/frog.jpg": "4-1", "music/beat.mp3": "4-1"}}
     farmhand.files = {"pictures/logo.png": b"logo", "slideshows/Finished prints/pictures/frog.jpg": b"frog",
                       "music/beat.mp3": b"beat"}
     return farmhand
@@ -168,3 +169,75 @@ def test_the_status_start_and_stop_routes(api, ffmpeg, controlled, plugin):
 
     r = api.post("/api/stream-control/stop")
     assert r.json()["live"] is False and store.store().get("live_wanted") is None
+
+
+def downloads(farmhand) -> list[str]:
+    """The files the plugin asked Farmhand for."""
+    return [c for c in farmhand.calls if c.startswith("/plugin-api/v1/stream/") and c != "/plugin-api/v1/stream/design"]
+
+
+def test_only_files_missing_or_changed_are_fetched(controlled, plugin):
+    stream_control.follower.check()
+    assert len(downloads(controlled)) == 3
+
+    # saved again in Stream control, its files as they were: nothing fetched again
+    controlled.calls.clear()
+    controlled.design = design(2, border_color="#FF0000")
+    stream_control.follower.check()
+    assert stream_control.follower.design()["revision"] == 2 and downloads(controlled) == []
+
+    # one picture replaced under its own name (its stamp changed): just that one
+    controlled.files["pictures/logo.png"] = b"new logo"
+    controlled.media = {**controlled.media, "stamps": {**controlled.media["stamps"], "images/logo.png": "8-2"}}
+    stream_control.follower.check()
+    assert downloads(controlled) == ["/plugin-api/v1/stream/pictures/logo.png"]
+    assert stream_media.sent_picture_path(plugin, "logo.png").read_bytes() == b"new logo"
+
+    # one gone from the copy (deleted by hand, say): fetched again
+    controlled.calls.clear()
+    stream_media.sent_picture_path(plugin, "logo.png").unlink()
+    controlled.design = design(3)
+    stream_control.follower.check()
+    assert downloads(controlled) == ["/plugin-api/v1/stream/pictures/logo.png"]
+
+
+def test_farmhand_asking_to_slow_down_is_waited_out(controlled, plugin, monkeypatch):
+    monkeypatch.setattr(stream_control, "BUSY_WAIT_MOST", 0.01)
+    controlled.files_busy_for = 3
+    stream_control.follower.check()
+    assert stream_control.follower.error() is None
+    assert stream_media.sent_picture_path(plugin, "logo.png").read_bytes() == b"logo"
+    assert [p.name for p in stream_media.sent_track_paths(plugin)] == ["beat.mp3"]
+
+
+def test_files_that_cant_be_copied_are_said_in_a_few_words_and_tried_again(controlled, plugin):
+    many = [f"sponsor {i}.png" for i in range(10)]
+    controlled.media = {**controlled.media, "images": ["logo.png", *many]}
+    stream_control.follower.check()
+    said = stream_control.follower.error()
+    assert said.startswith("10 of Stream control's files couldn't be copied from Farmhand (sponsor 0.png, sponsor 1.png …)")
+    assert "sponsor 2.png" not in said and len(said) < 200
+    assert stream_control.follower.following()  # (the design is followed all the same)
+
+    # the next ask fetches only what's still missing
+    controlled.calls.clear()
+    controlled.files.update({f"pictures/{n}": b"x" for n in many})
+    stream_control.follower.check()
+    assert stream_control.follower.error() is None
+    assert sorted(downloads(controlled)) == sorted(f"/plugin-api/v1/stream/pictures/sponsor%20{i}.png" for i in range(10))
+    controlled.calls.clear()
+    stream_control.follower.check()
+    assert downloads(controlled) == []
+
+
+def test_the_plugins_own_switch_is_set_aside_while_following(api, ffmpeg, controlled, plugin):
+    controlled.design = design(cells=WORDS)
+    api.put("/api/stream", json={"stream_key": KEY, "enabled": False})
+    stream_control.follower.check()
+    r = api.post("/api/stream-control/start")
+    assert r.status_code == 200, r.text
+    assert r.json()["live"] is True
+    controlled.design = None  # let go: the plugin's own switch again (off: stopped as a switch turned off is)
+    stream_control.follower.check()
+    assert chosen(plugin)["enabled"] is False
+    assert api.get("/api/stream-control").json()["live"] is False

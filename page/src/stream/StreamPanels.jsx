@@ -109,7 +109,7 @@ export function MuteSwitch({ muted, onMute }) {
 // On air or not, and the button that changes it. `destLabel(key)`: a destination's name; `destination`: the one chosen;
 // `off`: the switch at the top is off, so there's no going live until it's on. `channel`: the Twitch channel's name,
 // for the links to watch it, its chat, Stream Manager and Analytics (none until it's set in Twitch settings).
-export function LiveStatusPanel({ status, destLabel, destination, busy, onStart, onStop, off = false, channel = null, following = false }) {
+export function LiveStatusPanel({ status, destLabel, destination, busy, onStart, onStop, off = false, channel = null }) {
   const on = status.encoder === "nvenc" ? " · on the NVIDIA card" : status.encoder === "cpu" ? " · on the processor" : "";
   return (
     <div data-testid="stream-status" style={panelBox({ padding: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" })}>
@@ -132,9 +132,7 @@ export function LiveStatusPanel({ status, destLabel, destination, busy, onStart,
                   : ""}${status.changing ? " · Changing to the new layout: it takes over in a few seconds, with no break" : ""}`
               : off
                 ? "The stream is off: ffmpeg isn't running on the server. Set everything up as usual, and turn it on above to go live."
-                : following
-                  ? `Farmhand sends Stream control's layout to ${destLabel(destination)} itself, no OBS needed.`
-                  : `Farmhand sends the grid below to ${destLabel(destination)} itself, no OBS needed.`}
+                : `Farmhand sends the grid below to ${destLabel(destination)} itself, no OBS needed.`}
         </div>
         {channel && (
           <div data-testid="stream-twitch-links" style={uiText(12, c.textMuted, { marginTop: 6, lineHeight: 1.5 })}>
@@ -172,9 +170,9 @@ export function LiveStatusPanel({ status, destLabel, destination, busy, onStart,
 // Where it goes, and the stream's delay (the stream key and the rest of Twitch are in the Twitch settings window)
 // `delay`, `onDelay`: seconds the stream is held before Twitch gets it (saved with Save; applies when going live).
 // `settings`: the Twitch settings button and its summary (the stream key and the extras are in its window).
-// While Farmhand's Stream control is followed: its layout is the one sent, so this stands in place of the layout editor
-// (the grid and its squares, the music, the holding screen, saved layouts). This page's own layout is kept as it was
-// and comes back when Stream control lets go. `control`: { revision, savedAt, title, error }.
+// While Farmhand's Stream control is followed, this is the whole page: Stream control sends its layout and starts and
+// stops the stream from Farmhand. This page's own layout is kept as it was, and the page comes back as soon as Stream
+// control lets go. `control`: { revision, savedAt, title, error }.
 export function ControlledPanel({ control }) {
   const saved = control.savedAt ? new Date(control.savedAt) : null;
   return (
@@ -184,9 +182,9 @@ export function ControlledPanel({ control }) {
         Controlled by Stream control
       </div>
       <div style={uiText(13, c.text, { lineHeight: 1.5 })}>
-        Farmhand's <b>Stream control</b> is sending one stream everywhere, and Twitch is ticked in it, so its layout is the
-        one going to Twitch: the grid and its squares, the music, the holding screen and the stream's delay. Change the
-        layout in Stream control, in Farmhand's menu.
+        Farmhand's <b>Stream control</b> is sending one stream everywhere, and Twitch is ticked in it: it sends its layout
+        to Twitch, and goes live and stops there. Change the layout, and go live or stop, in Stream control, in Farmhand's
+        menu.
       </div>
       {control.title && <div style={uiText(12, c.textMuted)}>Its title: {control.title}</div>}
       {saved && !isNaN(saved) && (
@@ -194,8 +192,9 @@ export function ControlledPanel({ control }) {
       )}
       {control.error && <div style={uiText(12, c.danger, { lineHeight: 1.5 })}>{control.error}</div>}
       <div style={help}>
-        This page's own layout is kept as it was: it comes back by itself when Stream control is switched off or Twitch is
-        unticked there. The stream key, the channel and the Twitch settings stay here.
+        This page's own layout is kept as it was: the page comes back by itself when Stream control is switched off or
+        Twitch is unticked there. The stream key, the channel and the Twitch settings are still the plugin's own: open
+        them with Twitch settings under the stream's name in Stream control.
       </div>
     </div>
   );
@@ -219,7 +218,6 @@ export function WhereToPanel({ destination, destinations, onDestination, delay =
         )}
       </label>
       {settings}
-      {onDelay && (<>
       <label style={uiText(12, c.textMuted, { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" })}>
         <span style={{ width: 90 }}>Stream delay</span>
         <input
@@ -233,7 +231,6 @@ export function WhereToPanel({ destination, destinations, onDestination, delay =
         falling behind for a moment) never reaches viewers. They see everything this much later.
         {live ? " A new delay applies the next time you go live." : ""}
       </div>
-      </>)}
     </div>
   );
 }
