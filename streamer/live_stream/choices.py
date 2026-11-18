@@ -107,7 +107,8 @@ def settings(db: Store) -> dict:
 
 
 # What Stream control's design (Farmhand's GET /stream/design) brings in, in place of the plugin's own: the picture,
-# the music, the holding screen. Not the stream key, the channel, the Twitch extras or the plugin's own on/off switch.
+# the music, the holding screen. Not the stream key, the channel or the Twitch extras (and the plugin's own on/off switch is
+# set aside: while following, Stream control starts and stops the stream).
 DESIGNED = ("cols", "rows", "cells", "show_status", "layout", "seconds_all", "seconds_each", "resolution", "border_color",
             "background", "font", "color", "music", "music_volume", "music_shuffle", "delay", "holding")
 TITLE_MAX = 140  # Twitch's stream title
@@ -127,7 +128,8 @@ def chosen(db: Store) -> dict:
     out = _normalised(db, raw)
     title = design.get("title") if isinstance(design.get("title"), str) else ""
     description = design.get("description") if isinstance(design.get("description"), str) else ""
-    return {**out, "following": True, "title": title.strip()[:TITLE_MAX], "description": description}
+    # (the plugin's own on/off switch isn't shown while following: Stream control starts and stops it from Farmhand)
+    return {**out, "enabled": True, "following": True, "title": title.strip()[:TITLE_MAX], "description": description}
 
 
 def _normalised(db: Store, raw: dict) -> dict:

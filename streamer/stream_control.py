@@ -20,6 +20,7 @@ from __future__ import annotations
 import copy
 import json
 import threading
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -27,6 +28,9 @@ from . import config, farm, storage, stream_media
 from .farmhand import FarmhandError
 
 POLL = 5  # seconds between asking Farmhand for the design
+STAMPS_FILE = ".stamps.json"  # in MEDIA_DIR: each file's stamp (Farmhand's media.stamps) as last copied
+BUSY_TRIES = 4  # times a file is asked for while Farmhand says to slow down (429)
+BUSY_WAIT_MOST = 10  # seconds waited at most between those
 MEDIA_DIR = "stream-control"  # in the plugin's own volume (DATA_DIR): Stream control's pictures and music, as a stream folder
 PICTURE_KEYS = ("cols", "rows", "cells", "show_status", "layout", "seconds_all", "seconds_each", "border_color",
                 "background", "font", "color")  # (as routes.PICTURE: these changed while live, the picture is made again)
@@ -138,10 +142,16 @@ class Follower:
         db = store()
         before = chosen(db)
         with self._lock:
-            media_changed = got is not None and self._got is not None and got[1] != self._got[1]
-            self._design, self._got, self._error = design, got, problem
+            # (the files changed, or ones that couldn't be copied before are there now)
+            media_changed = got is not None and self._got is not None and (
+                got[1] != self._got[1] or (len(self._got) > 2 and not problem))
+            # (some files not copied: the next ask copies again, fetching only what's still missing)
+            self._design, self._got, self._error = design, (got if not problem or got is None else (*got, "again")), problem
         after = chosen(db)
         if not stream.status()["live"]:
+            return
+        if not after["enabled"]:  # let go, and the plugin's own switch is off: stopped, as turning it off does
+            stream.stop()
             return
         if before["following"] != after["following"] or media_changed or any(before[k] != after[k] for k in PICTURE_KEYS):
             try:
@@ -159,12 +169,20 @@ class Follower:
 
     def _copy_media(self, media: dict) -> str | None:
         """Stream control's pictures, slideshows and music copied from Farmhand into the folder the stream reads while
-        following (laid out as a stream folder: images/, slideshows/<name>/ with its order, music/). Files no longer
-        named are taken out. Pictures are copied each time (a picture replaced under its own name); a track only when
-        it isn't there yet (MP3s are big). What couldn't be copied, in words (None: all of it)."""
+        following (laid out as a stream folder: images/, slideshows/<name>/ with its order, music/). Only what's
+        missing, or changed in Farmhand (its stamp, media.stamps, isn't the one last copied: STAMPS_FILE) is fetched,
+        so a design saved again doesn't fetch every picture again; files no longer named are taken out. Farmhand asking
+        it to slow down (429) is waited out and tried again. What couldn't be copied, in a few words (None: all of it)."""
         root = self._folder()
         client = farm.client(timeout=farm.QUICK)
-        problems: list[str] = []
+        stamps = media.get("stamps") if isinstance(media.get("stamps"), dict) else {}
+        try:
+            had = json.loads((root / STAMPS_FILE).read_text(encoding="utf-8"))
+            had = had if isinstance(had, dict) else {}
+        except (OSError, ValueError):
+            had = {}
+        copied: dict[str, str] = {}  # each file's stamp as copied now (or kept)
+        failed: list[tuple[str, str]] = []  # (name, why)
 
         def names(raw, types: dict) -> list[str]:
             out = []
@@ -179,15 +197,26 @@ class Follower:
                     out.append(n)
             return out
 
-        def fetch(path: str, to: Path, again: bool = True) -> None:
-            if not again and to.is_file():
+        def fetch(path: str, rel: str, to: Path) -> None:
+            stamp = stamps.get(rel)
+            if to.is_file() and had.get(rel) == stamp:
+                if stamp is not None:
+                    copied[rel] = stamp
                 return
-            try:
-                storage.write_bytes_atomically(to, client.file(path))
-            except FarmhandError as e:
-                problems.append(f"{to.name}: {e.short}")
-            except OSError as e:
-                problems.append(f"{to.name}: {e.strerror or e}")
+            for attempt in range(BUSY_TRIES):
+                try:
+                    storage.write_bytes_atomically(to, client.file(path))
+                except FarmhandError as e:
+                    if e.kind == "busy" and attempt < BUSY_TRIES - 1:
+                        time.sleep(min(BUSY_WAIT_MOST, e.retry_after or 1))
+                        continue
+                    failed.append((to.name, e.short))
+                except OSError as e:
+                    failed.append((to.name, str(e.strerror or e)))
+                else:
+                    if stamp is not None:
+                        copied[rel] = stamp
+                return
 
         def keep_only(d: Path, keep: set[str]) -> None:
             for f in d.iterdir() if d.is_dir() else []:
@@ -199,7 +228,7 @@ class Follower:
                 (root / d).mkdir(parents=True, exist_ok=True)
             images = names(media.get("images"), stream_media.PICTURE_TYPES)
             for n in images:
-                fetch(f"/stream/pictures/{_quote(n)}", root / stream_media.IMAGES / n)
+                fetch(f"/stream/pictures/{_quote(n)}", f"{stream_media.IMAGES}/{n}", root / stream_media.IMAGES / n)
             keep_only(root / stream_media.IMAGES, set(images))
 
             shows = set()
@@ -213,8 +242,8 @@ class Follower:
                 d.mkdir(exist_ok=True)
                 pictures = names(show.get("images"), stream_media.PICTURE_TYPES)
                 for n in pictures:
-                    fetch(f"/stream/slideshows/{_quote(name)}/pictures/{_quote(n)}", d / n)
-                keep_only(d, set(pictures))
+                    fetch(f"/stream/slideshows/{_quote(name)}/pictures/{_quote(n)}", f"{stream_media.SLIDESHOWS}/{name}/{n}", d / n)
+                keep_only(d, set(pictures) | {stream_media.ORDER_FILE})
                 order = [n for n in show.get("images") or [] if n in pictures or stream_media.is_blank(n)]
                 stream_media._write_order(d, order)  # (its blank screens live only in its order)
             for d in (root / stream_media.SLIDESHOWS).iterdir():
@@ -227,14 +256,15 @@ class Follower:
 
             tracks = names(media.get("music"), stream_media.TRACK_TYPES)
             for n in tracks:
-                fetch(f"/stream/music/{_quote(n)}", root / stream_media.MUSIC / n, again=False)
+                fetch(f"/stream/music/{_quote(n)}", f"{stream_media.MUSIC}/{n}", root / stream_media.MUSIC / n)
             keep_only(root / stream_media.MUSIC, set(tracks))
+            storage.write_text_atomically(root / STAMPS_FILE, json.dumps(copied, ensure_ascii=False))
         except OSError as e:
-            problems.append(f"the plugin's folder for them ({root}): {e.strerror or e}")
-        if not problems:
+            return f"Stream control's pictures and music couldn't be copied into the plugin's folder ({root}): {e.strerror or e}"
+        if not failed:
             return None
-        more = f" (and {len(problems) - 3} more)" if len(problems) > 3 else ""
-        return "Some of Stream control's pictures or music couldn't be copied from Farmhand: " + "; ".join(problems[:3]) + more
-
+        first = ", ".join(n for n, _ in failed[:2]) + (" …" if len(failed) > 2 else "")
+        what = "file" if len(failed) == 1 else "files"
+        return f"{len(failed)} of Stream control's {what} couldn't be copied from Farmhand ({first}): {failed[0][1]}"
 
 follower = Follower()
