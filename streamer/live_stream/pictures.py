@@ -170,7 +170,7 @@ class PicturesMixin:
                 if code == 0 and time.monotonic() - started >= TURNS_FOR - 60:
                     continue  # the day's timetable and lists are done: started again at once, from the top
                 with self._lock:
-                    last = next((l for l in reversed(self._said) if l), None)
+                    last = self._last_said()
                     self._error = f"The picture stopped (ffmpeg exit {code}): {last or 'no reason given'}. Trying again in {RETRY_SECONDS} s."
                 self._recheck_card()
                 if not self._wait(gen, RETRY_SECONDS, picture):

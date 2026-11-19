@@ -40,7 +40,7 @@ class SendingMixin:
             if not self._current(gen):
                 return
             with self._lock:
-                last = next((l for l in reversed(self._said) if l), None)
+                last = self._last_said()
                 self._error = (f"The connection to {self._destination and DESTINATIONS[self._destination]['label'] or 'Twitch'} dropped "
                                f"(ffmpeg exit {code}): {last or 'no reason given'}. Connecting again in {RETRY_SECONDS} s.")
                 if time.monotonic() - started > 60:
