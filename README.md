@@ -52,6 +52,9 @@ What it does:
   got, and the stream takes the new files up once they're in.
 - **Clips**: **Save clip** saves the last 1 second to 5 minutes of what went to Twitch as an MP4 in the NAS's Twitch
   clips folder (see [Clips](#clips)).
+- **A copy of its settings in Farmhand**: with `stream:backup`, Farmhand keeps a copy of the plugin's settings in its
+  own settings folder on the NAS, so a plugin rebuilt from scratch can be given them back (see
+  [Settings backup in Farmhand](#settings-backup-in-farmhand)).
 
 **Twitch settings** (a window of its own, opened from the page) hold the stream key and your **channel's name**. The
 name gives the live panel its links, as the YouTube plugin has Watch and YouTube Studio: **Watch** (the channel),
@@ -89,6 +92,7 @@ seconds, with AAC sound.
 | `streamer/stream_media.py`, `routes.py` | The stream folder and the page's API |
 | `streamer/store.py`, `farm.py`, `layouts.py`, `app.py` | The plugin's own: its settings file, reading Farmhand, saved layouts, the web server |
 | `streamer/live_stream/clips.py`, `streamer/clip_routes.py` | Clips: what went to Twitch kept five minutes, and saved as MP4s |
+| `streamer/backup.py`, `streamer/backup_routes.py` | The copy of its settings kept in Farmhand, and Restore |
 | `page/` | The page, a small Vite build of its own (`npm run build` puts it in `streamer/web/`); `src/stream/TwitchSettings.jsx` the Twitch settings window |
 | `tests/` | Tests against stand-ins for Farmhand's plugin API and ffmpeg (`python -m pytest -q`) |
 
@@ -116,6 +120,24 @@ for each thing it keeps, made if it isn't there:
 Each is shown as people reach it on the network, with a **Change…** to put it in another folder of the save location.
 The password is kept in the plugin's own volume and never comes back out. Until a save location is set, the plugin uses
 the folders its container is given, `/media` and `/clips` (`./media` and `./clips` beside its compose file).
+
+## Settings backup in Farmhand
+
+Farmhand keeps a copy of everything set up on the plugin, in Farmhand's own settings folder on the NAS: the stream's
+settings and channel name, **the stream key**, **the Twitch sign-in** (the application's Client ID and secret, and the
+sign-in itself), the Twitch extras, the saved layouts, the clip length and the save location (its share and login
+name). Every 30 seconds the plugin looks whether any of it changed and, when it has, gives Farmhand the new copy (once
+after every start, too, and every few hours as Twitch renews the sign-in). The copy only ever travels over Farmhand's
+plugin API, with the plugin's token, and the plugin never prints it.
+
+Left out, and never overwritten by a restore: whether the stream is live now (a rebuilt plugin doesn't go live by
+itself), the save location's **password** (Farmhand never keeps a share's password, so type it again on the plugin's
+settings after restoring) and the cameras last heard of from Farmhand (it's asked for them again within a minute).
+
+It needs the `stream:backup` permission, **Allow**ed for the plugin on Farmhand's **Plugins** page; until then the
+plugin's page says Farmhand isn't keeping a copy. To give a rebuilt plugin its settings back, press **Restore** by it on
+Farmhand's **Plugins** page: the plugin fetches the copy from Farmhand itself (`POST /api/farmhand-backup/restore`). A
+stream that's live keeps going as it is; what was restored is used from the next **Go live**.
 
 ## Clips
 

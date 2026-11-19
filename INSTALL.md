@@ -53,6 +53,8 @@ It answers at `http://<that machine>:8081`, but doesn't know Farmhand yet.
 3. Farmhand lists what it asks to read:
    - `cameras:read`: your printers' camera addresses
    - `prints:read`: what each printer is printing
+   - `stream:backup`: a copy of the plugin's settings (stream key and Twitch sign-in included) kept in Farmhand's
+     settings folder, so a rebuilt plugin can be given them back with **Restore** on the Plugins page
    - `stream:read`: Stream control's layout, for when you send one stream everywhere from Farmhand (see the README)
 4. Leave **Only accept its token from its own address** ticked (the token is then useless anywhere else).
 5. Press **Add Twitch Stream**. The window **"Give Twitch Stream its token"** shows:

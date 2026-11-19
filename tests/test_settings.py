@@ -86,7 +86,8 @@ def test_the_twitch_extras_are_kept_but_cant_be_turned_on_yet(api):
 
 def test_manifest_and_health(api, farmhand):
     m = api.get("/manifest").json()
-    assert m["id"] == "twitch" and set(m["permissions"]) == {"cameras:read", "prints:read", "stream:read"}
+    assert m["id"] == "twitch" and set(m["permissions"]) == {"cameras:read", "prints:read", "stream:backup", "stream:read"}
+    assert m["backup"] == {"restore": "/api/farmhand-backup/restore"}
     assert m["stream_control"] == {"path": "/api/stream-control", "site": "Twitch"}
     assert api.get("/health").text == "ok"
     farm.cameras(store.store())
