@@ -72,6 +72,15 @@ class Farmhand:
         slideshows: [{name, images}], music, error}}."""
         return self.get("/stream/design")
 
+    def backup(self) -> dict:
+        """GET /backup (stream:backup): the copy of this plugin's settings Farmhand keeps, {format, saved_at, settings};
+        404 (FarmhandError "error", status 404) while it keeps none."""
+        return self.get("/backup")
+
+    def save_backup(self, backup: dict) -> dict:
+        """PUT /backup (stream:backup): {format, saved_at, settings} kept by Farmhand in its settings folder; {saved_at}."""
+        return self.call("PUT", "/backup", body=backup)
+
     def file(self, path: str) -> bytes:
         """A file Farmhand hands over as it is (a picture, a track): its bytes."""
         with self._open(path, accept="*/*", timeout=max(self.timeout, FILE_TIMEOUT)) as answer:
@@ -112,11 +121,11 @@ class Farmhand:
     def get(self, path: str) -> dict:
         return self.call("GET", path)
 
-    def call(self, method: str, path: str) -> dict:
-        with self._open(path, accept="application/json", timeout=self.timeout, method=method) as answer:
+    def call(self, method: str, path: str, body: dict | None = None) -> dict:
+        with self._open(path, accept="application/json", timeout=self.timeout, method=method, body=body) as answer:
             return json.loads(answer.read().decode("utf-8"))
 
-    def _open(self, path: str, accept: str, timeout: float, method: str = "GET"):
+    def _open(self, path: str, accept: str, timeout: float, method: str = "GET", body: dict | None = None):
         if not self.url:
             raise FarmhandError(
                 "FARMHAND_URL isn't set, so this plugin doesn't know where Farmhand is. Add the plugin on Farmhand's "
@@ -129,10 +138,12 @@ class Farmhand:
                 "then start its container with the FARMHAND_TOKEN it shows you.",
                 "setup",
             )
-        request = urllib.request.Request(
-            self.url + path, headers={"Authorization": f"Bearer {self.token}", "Accept": accept}, method=method,
-            data=b"" if method == "POST" else None,
-        )
+        headers = {"Authorization": f"Bearer {self.token}", "Accept": accept}
+        data = b"" if method == "POST" else None
+        if body is not None:  # (a JSON body: the settings backup)
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(self.url + path, headers=headers, method=method, data=data)
         try:
             return urllib.request.urlopen(request, timeout=timeout)
         except urllib.error.HTTPError as e:  # Farmhand answered, but not with 2xx

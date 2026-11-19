@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 
-from . import camera_watch, config, save_location, store, stream_control, twitch_title
+from . import backup, camera_watch, config, save_location, store, stream_control, twitch_title
 from .app import app
 from .live_stream import stream
 
@@ -24,10 +24,12 @@ async def _running(_app):
     stream_control.follower.start()
     stream.resume(s, store.session_factory)  # live before the restart: live again
     twitch_title.keeper.start()  # the Twitch title kept to Stream control's (once signed in to Twitch)
+    backup.start()  # its settings copied to Farmhand whenever they change (stream:backup), so a rebuilt plugin gets them back
     yield
     # (only the container stopping: it goes live again when it starts)
     stream_control.follower.stop()
     camera_watch.stop()
+    backup.stop()
     stream.stop(forget=False)
 
 

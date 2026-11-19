@@ -1,6 +1,7 @@
 """
 A stand-in for Farmhand's plugin API (/plugin-api/v1), answering in exactly its shapes (docs/plugins.md): the token
-checked, permissions checked, 429 on demand, the farm's cameras and each printer's print. Copied from the Hello
+checked, permissions checked, 429 on demand, the farm's cameras and each printer's print, and the copy of the plugin's
+settings it keeps (stream:backup: PUT and GET /backup). Copied from the Hello
 plugin's tests, with what the stream plugins read added. `down` makes it answer
 nothing at all, as a stopped Farmhand.
 """
@@ -12,7 +13,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN = "good-token"
-EVERYTHING = {"printers:read", "prints:read", "farm:read", "cameras:read", "stream:read"}
+EVERYTHING = {"printers:read", "prints:read", "farm:read", "cameras:read", "stream:backup", "stream:read"}
 MJPEG = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_on_network_error", "1", "-reconnect_delay_max", "5",
          "-rw_timeout", "10000000", "-use_wallclock_as_timestamps", "1", "-f", "mpjpeg"]
 
@@ -47,6 +48,10 @@ class FakeFarmhand:
         self.media = {"images": [], "slideshows": [], "music": [], "error": None}
         self.files: dict[str, bytes] = {}
         self.files_busy_for = 0  # the next this-many file downloads get 429 (Retry-After: 1)
+        # stream:backup: the copy of the plugin's settings kept ({format, saved_at, settings}; None: none yet), and every
+        # backup PUT, as sent
+        self.backup: dict | None = None
+        self.backups_put: list[dict] = []
         self.down = False  # True: nothing answers (Farmhand stopped)
         self.permissions = set(EVERYTHING)
         self.busy_for = 0  # the next this-many calls get 429
@@ -70,6 +75,13 @@ class FakeFarmhand:
                 if fake.down:
                     return self.close_connection_now()
                 fake.answer(self, post=True)
+
+            def do_PUT(self):
+                fake.calls.append("PUT " + self.path)
+                body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                if fake.down:
+                    return self.close_connection_now()
+                fake.answer(self, put=body)
 
             def close_connection_now(self):
                 self.close_connection = True
@@ -109,7 +121,7 @@ class FakeFarmhand:
 
     # ------------------------------------------------------------------ the plugin API
 
-    def answer(self, h: BaseHTTPRequestHandler, post: bool = False):
+    def answer(self, h: BaseHTTPRequestHandler, post: bool = False, put: bytes | None = None):
         if h.headers.get("Authorization") != f"Bearer {TOKEN}":
             return self.send(h, 401, {"detail": "That plugin token isn't valid: it was replaced by a new one."})
         if self.busy_for > 0:
@@ -132,6 +144,8 @@ class FakeFarmhand:
                 "scheme": "farmhand", "mode": "dark", "time_zone": "Europe/London",
                 "colors": {"bg": "#1B1D1E", "amber": "#E39F3A"},
             })
+        if path == "/backup":
+            return self.allowed(h, "stream:backup") and self.answer_backup(h, put)
         if path == "/stream/design":
             if not self.allowed(h, "stream:read"):
                 return
@@ -153,6 +167,24 @@ class FakeFarmhand:
         if path == "/events":
             return self.allowed(h, "prints:read") and self.events(h)
         self.send(h, 404, {"detail": "Not Found"})
+
+    def answer_backup(self, h, put: bytes | None) -> bool:
+        """GET /backup: the copy kept, or 404 while there's none. PUT /backup: {format: 1, saved_at, settings: {str: str}}
+        (at most 2 MiB) kept, answered {saved_at}."""
+        if put is None:
+            if self.backup is None:
+                return self.send(h, 404, {"detail": "Farmhand has no copy of this plugin's settings."})
+            return self.send(h, 200, self.backup)
+        if len(put) > 2 * 1024 * 1024:
+            return self.send(h, 413, {"detail": "That backup is bigger than 2 MiB."})
+        body = json.loads(put)
+        settings = body.get("settings")
+        if body.get("format") != 1 or not isinstance(settings, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in settings.items()):
+            return self.send(h, 422, {"detail": "That isn't a backup Farmhand can keep."})
+        self.backups_put.append(body)
+        self.backup = {"format": 1, "saved_at": body["saved_at"], "settings": settings}
+        return self.send(h, 200, {"saved_at": body["saved_at"]})
 
     def allowed(self, h, permission: str) -> bool:
         if permission in self.permissions:

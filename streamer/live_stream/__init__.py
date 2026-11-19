@@ -47,7 +47,7 @@ def page(db: Store) -> dict:
     """Everything the Stream page shows: {settings, media (the stream folder's pictures, slideshows and music, stream_media.media),
     status, destinations, resolutions, fonts (what a square's words can be written in), test_destination (where
     the stream goes instead of Twitch while the plugin is being tried out, or None)}."""
-    from .. import config, stream_control
+    from .. import backup, config, stream_control
 
     return {
         # Farmhand's Stream control: while following, its layout is sent and the page shows "Controlled by Stream control"
@@ -60,4 +60,5 @@ def page(db: Store) -> dict:
         "destinations": [{"key": k, "label": v["label"]} for k, v in DESTINATIONS.items()],
         "resolutions": [{"key": k, "label": RESOLUTION_LABELS[k]} for k in RESOLUTIONS],
         "fonts": [{"key": k, "label": v[0], "generic": v[2]} for k, v in FONTS.items()],
+        "backup": backup.status(),  # Farmhand's copy of these settings: {saved_at (when it last took them), error}
     }
