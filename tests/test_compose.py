@@ -14,6 +14,7 @@ def test_compose_file_is_valid_and_builds_the_plugin_from_its_own_repository():
     stream = data["services"]["twitch"]
     assert stream["build"] == "https://github.com/The-Original-Reth/farmhand-twitch-plugin.git#main"
     assert stream["ports"] == ["8081:8080"]  # (8080 left for the YouTube plugin)
+    assert stream["init"] is True  # (ffmpeg's finished processes reaped: a restart never hangs)
     assert stream["env_file"] == [{"path": "twitch.env", "required": False}]
     assert "twitch-data:/data" in stream["volumes"]
     assert "twitch-data" in data["volumes"]
