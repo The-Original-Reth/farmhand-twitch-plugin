@@ -153,7 +153,12 @@ the cameras be fitted on the card), and the YouTube plugin's README
 (["An NVIDIA card"](https://github.com/The-Original-Reth/farmhand-youtube-plugin#an-nvidia-card)) has the driver set-up
 for a Proxmox container. `FARMHAND_STREAM_CAMERAS` (`auto` or `cpu`) says where the cameras are unpacked. Two plugins on
 one card each compress their own picture: a GeForce card with driver 550 or later allows 8 at once (each plugin uses
-one, two for a moment while a new layout takes over), and the cameras don't count against it.
+one, two for a moment while a new layout takes over), and the cameras don't count against it. The card is shared with
+anything else given it, so it isn't trusted from Go live on: whenever the picture fails, the card is tried again. One
+that won't open another session (or is gone) leaves the stream to be compressed on the processor from the next picture
+on, and the page and Farmhand's Stream control say so; once it takes it again, the next picture is back on the card. A
+camera that left the card tries it again the next time it's read, and where the cameras are unpacked is tried again at
+the next Go live or new layout.
 
 ## Add it to Farmhand
 
