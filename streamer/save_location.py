@@ -32,6 +32,7 @@ FOLDERS = {"stream": ("Stream folder", "Twitch stream"), "clips": ("Twitch clips
 MOUNT_POINT = Path(os.environ.get("STREAM_NAS_MOUNT", "/nas/save-location"))
 _lock = threading.Lock()
 _problem: dict = {"text": None}  # why the save location isn't mounted now, or None
+NO_LOCATION = "Set the save location first: the folders are inside it."
 
 
 def chosen(db: Store) -> dict | None:
@@ -94,20 +95,28 @@ def _relative(found: dict, key: str) -> str:
     return ((found.get("folders") or {}).get(key) or FOLDERS[key][1]).strip("/")
 
 
-def stream_dir(db: Store) -> Path:
-    """The stream folder: inside the save location, or the container's own (/media) while there's none."""
+def _own_folder(key: str) -> Path:
+    """The folder the container itself was given for `key` (/media for the stream folder, /clips for clips)."""
+    return Path(config.settings.media_dir if key == "stream" else config.settings.clips_dir)
+
+
+def _folder(db: Store, key: str) -> Path:
+    """A folder inside the save location (where it would be, when it can't be mounted now), or the container's own
+    while there's none."""
     found = chosen(db)
     if found:
-        return folder_path(db, "stream") or MOUNT_POINT / _relative(found, "stream")
-    return Path(config.settings.media_dir)
+        return folder_path(db, key) or MOUNT_POINT / _relative(found, key)
+    return _own_folder(key)
+
+
+def stream_dir(db: Store) -> Path:
+    """The stream folder: inside the save location, or the container's own (/media) while there's none."""
+    return _folder(db, "stream")
 
 
 def clips_dir(db: Store) -> Path:
     """Where clips go: inside the save location, or the container's own (/clips) while there's none."""
-    found = chosen(db)
-    if found:
-        return folder_path(db, "clips") or MOUNT_POINT / _relative(found, "clips")
-    return Path(config.settings.clips_dir)
+    return _folder(db, "clips")
 
 
 def shown_as(db: Store, key: str) -> str | None:
@@ -133,7 +142,7 @@ def describe(db: Store) -> dict:
             folders.append({"key": key, "label": label, "path": network_path(found, rel), "relative": rel,
                             "problem": None if mounted else (problem() or "The save location isn't connected.")})
         else:
-            local = Path(config.settings.media_dir if key == "stream" else config.settings.clips_dir)
+            local = _own_folder(key)
             folders.append({"key": key, "label": label, "path": shown_as(db, key) or str(local), "relative": None,
                             "problem": None if local.is_dir() else f"There's no folder at {local} in the plugin's container."})
     return {
@@ -156,10 +165,7 @@ def set_location(db: Store, address: str, username: str | None, password: str | 
     spec = mounts.validate_fields(protocol, server, share, username, password, domain, version)
     old = chosen(db)
     with _lock:
-        try:
-            mounts.unmount(MOUNT_POINT, lazy=True)
-        except mounts.MountError:
-            pass
+        _let_go()
         try:
             mounts.mount(spec, MOUNT_POINT)
         except mounts.MountError:
@@ -186,7 +192,7 @@ def set_folder(db: Store, key: str, relative: str) -> dict:
         raise ValueError("There's no such folder.")
     found = chosen(db)
     if not found:
-        raise ValueError("Set the save location first: the folders are inside it.")
+        raise ValueError(NO_LOCATION)
     rel = _safe_relative(relative)
     if not rel:
         raise ValueError("Choose a folder inside the save location, not the save location itself.")
@@ -203,19 +209,24 @@ def forget(db: Store) -> dict:
     db.put(PASSWORD_KEY, None)
     db.commit()
     with _lock:
-        try:
-            mounts.unmount(MOUNT_POINT, lazy=True)
-        except mounts.MountError:
-            pass
+        _let_go()
     _problem["text"] = None
     return describe(db)
+
+
+def _let_go() -> None:
+    """The share unmounted, best tried (nothing on it is touched). The caller holds _lock."""
+    try:
+        mounts.unmount(MOUNT_POINT, lazy=True)
+    except mounts.MountError:
+        pass
 
 
 def browse(db: Store, relative: str = "") -> dict:
     """The folders in a folder of the save location, for choosing one: {path (relative), shown_as, folders: [names]}."""
     found = chosen(db)
     if not found or not ensure(db):
-        raise ValueError(problem() or "Set the save location first: the folders are inside it.")
+        raise ValueError(problem() or NO_LOCATION)
     rel = _safe_relative(relative)
     here = MOUNT_POINT / rel if rel else MOUNT_POINT
     if not here.is_dir():
@@ -231,7 +242,7 @@ def make_folder(db: Store, relative: str, name: str) -> dict:
         raise ValueError("Give the new folder a name without / \\ : * ? \" < > |.")
     rel = _safe_relative(relative)
     if not chosen(db) or not ensure(db):
-        raise ValueError(problem() or "Set the save location first: the folders are inside it.")
+        raise ValueError(problem() or NO_LOCATION)
     (MOUNT_POINT / rel / name if rel else MOUNT_POINT / name).mkdir(parents=False, exist_ok=True)
     return browse(db, f"{rel}/{name}" if rel else name)
 
