@@ -83,6 +83,7 @@ const normalizeStream = (s) => ({
     savedAt: s.stream_control?.saved_at || null,
     title: s.stream_control?.title || null,
     error: s.stream_control?.error || null,
+    copying: s.stream_control?.copying || null, // how far copying its pictures and music has got, while it is
   },
   // being tried out: the rtmp:// address the stream goes to instead of Twitch, or null
   testDestination: s.test_destination || null,

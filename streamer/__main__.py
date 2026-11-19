@@ -16,6 +16,7 @@ async def _running(_app):
     s = store.store()
     save_location.ensure(s)  # the save location on the NAS mounted again (a mount is gone once the container restarts)
     camera_watch.start()  # the cameras kept in step with Farmhand (the Clip drop-down follows cameras added or removed)
+    stream_control.follower.copy_in_background()  # (the first ask doesn't wait for every file to be copied)
     try:  # Stream control asked first, so a stream live before the restart comes back with the layout it's to send
         stream_control.follower.check()
     except Exception as e:  # noqa: BLE001 - asked again every few seconds

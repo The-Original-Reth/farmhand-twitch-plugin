@@ -241,3 +241,53 @@ def test_the_plugins_own_switch_is_set_aside_while_following(api, ffmpeg, contro
     stream_control.follower.check()
     assert chosen(plugin)["enabled"] is False
     assert api.get("/api/stream-control").json()["live"] is False
+
+
+def test_copying_runs_on_its_own_and_never_holds_up_the_asking(api, controlled, plugin, monkeypatch):
+    """On CT 202 copying fifty tracks held the asking up for a quarter of an hour, so "Couldn't ask Farmhand" stayed on
+    screen long after Farmhand answered. Now the copier copies on its own: the design is followed at once, the asking
+    goes on (its note gone on the next good answer), and how far the copying has got is shown apart from what's wrong."""
+    import threading
+
+    follower = stream_control.follower
+    real = follower._copy_media
+    let_go, started = threading.Event(), threading.Event()
+
+    def slow(media, progress=None):  # (a long round: one file done, then held until let go)
+        progress(1, 3)
+        started.set()
+        let_go.wait(10)
+        return real(media, progress)
+
+    monkeypatch.setattr(follower, "_copy_media", slow)
+    follower.copy_in_background()
+    try:
+        follower.check()  # (returns at once: the copier copies)
+        assert follower.following() and wait_until(started.is_set, timeout=3)
+        assert follower.copying() == "Copying Stream control's pictures and music from Farmhand: 1 of 3 files"
+        assert api.get("/api/stream").json()["stream_control"]["copying"] == follower.copying()
+
+        controlled.down = True  # Farmhand away for a moment, while the copying goes on
+        follower.check()
+        assert "Couldn't ask Farmhand" in follower.error()
+        controlled.down = False
+        follower.check()  # (answered at once, the copying still under way)
+        assert follower.error() is None and follower.copying() is not None
+
+        controlled.design = design(2)  # a new revision saved meanwhile: followed at once
+        follower.check()
+        assert follower.design()["revision"] == 2
+
+        let_go.set()
+        assert wait_until(lambda: follower.copying() is None and not downloads_missing(controlled), timeout=5)
+        assert follower.error() is None
+        assert (config.settings.data_dir / stream_control.MEDIA_DIR / "images" / "logo.png").is_file()
+    finally:
+        let_go.set()
+        follower.stop()
+        follower._background = False
+
+
+def downloads_missing(farmhand) -> bool:
+    """Not every file the design names has been asked for yet."""
+    return not downloads(farmhand)

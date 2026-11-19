@@ -47,7 +47,9 @@ What it does:
   (it all comes back when Stream control lets go); the stream key, the channel and the Twitch settings stay the plugin's,
   in its Twitch settings window, which Stream control opens from Farmhand (`?view=twitch-settings`). Farmhand's **Go live** and
   **Stop** start and stop it (`/api/stream-control`, `stream:read`). Changes saved in Stream control reach the stream
-  within a few seconds, as a change saved here does.
+  within a few seconds, as a change saved here does. Its pictures and music are copied in the background (only new or
+  changed ones); the layout is followed at once with the files already there, the page says how far the copying has
+  got, and the stream takes the new files up once they're in.
 - **Clips**: **Save clip** saves the last 1 second to 5 minutes of what went to Twitch as an MP4 in the NAS's Twitch
   clips folder (see [Clips](#clips)).
 
