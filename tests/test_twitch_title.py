@@ -4,8 +4,6 @@ Stream control's title set on the channel, again whenever it changes. Twitch is 
 """
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from streamer import store, twitch_title

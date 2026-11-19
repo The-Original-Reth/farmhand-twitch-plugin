@@ -103,16 +103,28 @@ def frames_in(buffer: bytearray) -> list[bytes]:
         del buffer[:end + 2]
 
 
+def _head(ffmpeg: str) -> list[str]:
+    """How every feeder's ffmpeg starts: quiet but for warnings, never reading the keyboard."""
+    return [ffmpeg, "-hide_banner", "-loglevel", "warning", "-nostdin"]
+
+
+def _fit_on_processor(w: int, h: int) -> list[str]:
+    """The camera fitted in w x h on the processor, its own shape kept and its sides made even."""
+    return [f"scale={w}:{h}:force_original_aspect_ratio=decrease", "scale=trunc(iw/2)*2:trunc(ih/2)*2"]
+
+
+# Each picture stamped with its count, not with when it came (see feeder_command)
+_STAMPED = ["setsar=1", "settb=1/1000", "setpts=N"]
+
+
 def feeder_command(ffmpeg: str, input_args: list[str], turn: list[str], size: tuple[int, int]) -> list[str]:
     """The camera read, turned, fitted in `size` (its own shape kept) and put out as JPEGs on stdout: each picture the
     camera sends, once (`-fps_mode passthrough`: none repeated or dropped). Not thinned out by when they come: a Pi's
     go2rtc camera at 15 a second sometimes hands two over a millisecond apart, and both are wanted. Each is stamped with
     its count (`settb`, `setpts=N`): stamped with when it came, two that share a stamp would have the second thrown away
     by ffmpeg ("non monotonically increasing dts"), and the pictures here are taken in turn, not by time."""
-    w, h = size
-    chain = [*turn, f"scale={w}:{h}:force_original_aspect_ratio=decrease", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "setsar=1",
-             "settb=1/1000", "setpts=N"]
-    return [ffmpeg, "-hide_banner", "-loglevel", "warning", "-nostdin", *input_args, "-an", "-vf", ",".join(chain),
+    chain = [*turn, *_fit_on_processor(*size), *_STAMPED]
+    return [*_head(ffmpeg), *input_args, "-an", "-vf", ",".join(chain),
             "-fps_mode", "passthrough", "-enc_time_base", "1/1000",
             "-c:v", "mjpeg", "-q:v", str(JPEG_QUALITY), "-f", "image2pipe", "pipe:1"]
 
@@ -127,10 +139,9 @@ def raw_feeder_command(ffmpeg: str, input_args: list[str], turn: list[str], size
         on_side = sum(t.startswith("transpose") for t in turn) % 2 == 1
         chain, first = [*gpu_scale(*((h, w) if on_side else (w, h))), *turn], HWACCEL
     else:
-        chain, first = [*turn, f"scale={w}:{h}:force_original_aspect_ratio=decrease", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-                        f"format={raw_frames.PIX_FMT}"], []
-    chain += ["setsar=1", "settb=1/1000", "setpts=N"]
-    return [ffmpeg, "-hide_banner", "-loglevel", "warning", "-nostdin", *first, *input_args, "-an", "-vf", ",".join(chain),
+        chain, first = [*turn, *_fit_on_processor(w, h), f"format={raw_frames.PIX_FMT}"], []
+    chain += _STAMPED
+    return [*_head(ffmpeg), *first, *input_args, "-an", "-vf", ",".join(chain),
             "-fps_mode", "passthrough", "-enc_time_base", "1/1000", "-pix_fmt", raw_frames.PIX_FMT, "-f", "yuv4mpegpipe",
             "pipe:1"]
 
@@ -199,11 +210,14 @@ class Feeder:
             proc = self._proc
         procs.end(proc)
 
+    def _fresh(self) -> bool:
+        """Whether the latest frame came within DOWN_AFTER seconds (the caller holds _lock)."""
+        return self._frame is not None and time.monotonic() - self._at < DOWN_AFTER
+
     def latest(self) -> tuple[bytes | None, tuple[int, int] | None]:
         """The latest frame and its size, while it's fresh (DOWN_AFTER); (None, the last size known) when it's down."""
         with self._lock:
-            fresh = self._frame is not None and time.monotonic() - self._at < DOWN_AFTER
-            return (self._frame if fresh else None), self._frame_size
+            return (self._frame if self._fresh() else None), self._frame_size
 
     def picture(self) -> bytes | None:
         """The latest frame as a JPEG (for the page's preview), while it's fresh; None when it's down. A raw camera's is
@@ -211,7 +225,7 @@ class Feeder:
         if not self.raw:
             return self.latest()[0]
         with self._lock:
-            fresh = self._frame is not None and time.monotonic() - self._at < DOWN_AFTER
+            fresh = self._fresh()
             frame, number, kept, size = self._frame, self._number, self._preview, self._frame_size
         if not fresh or not size:
             return None
@@ -228,7 +242,7 @@ class Feeder:
         oldest kept, when it has fallen behind; the latest, for a writer just starting), or the latest again when no
         newer one has come. (picture, its number, size); (None, `number`, the last size known) when it's down."""
         with self._lock:
-            if self._frame is None or time.monotonic() - self._at >= DOWN_AFTER or not self._kept:
+            if not self._fresh() or not self._kept:
                 return None, number, self._frame_size
             if number is None or number >= self._number:
                 n, frame = self._kept[-1]
@@ -273,7 +287,7 @@ class Feeder:
         while not self._stopped.is_set():
             got, heard = False, []
             try:
-                proc = self._popen(self._args if self.on_card or not self.raw else self._cpu_args, out=True)
+                proc = self._popen(self._command(), out=True)
             except OSError as e:
                 self.said.append(f"ffmpeg couldn't be started: {e.strerror or e}")
                 proc = None
@@ -301,6 +315,11 @@ class Feeder:
             self.restarts += 1
             wait = RETRY_FIRST if got else min(RETRY_MOST, wait * 2 if self.restarts > 1 else wait)
             self._stopped.wait(wait)
+
+    def _command(self) -> list[str]:
+        """This camera's ffmpeg as it's started now: on the card, or (a raw camera the card couldn't unpack) on the
+        processor."""
+        return self._args if self.on_card or not self.raw else self._cpu_args
 
     def _read(self, proc) -> bool:
         """Frames kept as they come, until the camera's ffmpeg ends. Whether any came."""

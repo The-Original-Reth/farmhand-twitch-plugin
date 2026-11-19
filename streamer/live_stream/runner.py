@@ -144,7 +144,7 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
         if not player:
             return
         if trying is None:
-            player.settings(on=player.on, shuffle=player.shuffle, volume=settings(store())["music_volume"])
+            _saved_volume(player)
             return
         player.settings(on=player.on, shuffle=player.shuffle, volume=trying[0])
         threading.Timer(TRYING_FOR + 0.5, self._tried_long_enough).start()
@@ -157,7 +157,7 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
             self._trying = None
             player = self._player
         if player:
-            player.settings(on=player.on, shuffle=player.shuffle, volume=settings(store())["music_volume"])
+            _saved_volume(player)
 
     def music_control(self, action: str) -> None:
         """"play", "pause", "next" or "back" on the music going out. ValueError when there's none to control."""
@@ -305,6 +305,17 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
             player.attach(proc.stdin)
         return proc
 
+    def _holding_now(self, player, resolution: str | None):
+        """The holding screen started while live (the self-check's top-up and refill), at this time live's size, as
+        the picture's: its ffmpeg, or None when it couldn't be."""
+        ffmpeg = procs.ffmpeg_path()
+        if not ffmpeg:
+            return None
+        db = store()
+        chosen = settings(db)
+        chosen["resolution"] = resolution or chosen["resolution"]
+        return self._holding(db, chosen, ffmpeg, player)
+
     def _top_up(self, gen: int) -> float | None:
         """A short stall left the delay partly used (self_check: TOP_UP_SHORT seconds or more missing, for TOP_UP_AFTER):
         the holding screen goes to Twitch for about the seconds missing while they're collected again behind it. The
@@ -321,13 +332,7 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
         missing = buffer.delay - buffer.held()
         if missing < TOP_UP_SHORT:
             return None
-        ffmpeg = procs.ffmpeg_path()
-        if not ffmpeg:
-            return None
-        db = store()
-        chosen = settings(db)
-        chosen["resolution"] = resolution or chosen["resolution"]  # (this time live's size, as the picture's)
-        proc = self._holding(db, chosen, ffmpeg, player)
+        proc = self._holding_now(player, resolution)
         return missing if proc is not None and buffer.top_up(proc) else None
 
     def _delay_short(self, gen: int) -> float | None:
@@ -350,13 +355,7 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
             buffer, player, resolution = self._buffer, self._player, self._resolution
         if buffer is None or buffer.delay <= 0 or buffer.filling() or buffer.held() >= buffer.delay / 2:
             return False
-        ffmpeg = procs.ffmpeg_path()
-        if not ffmpeg:
-            return False
-        db = store()
-        chosen = settings(db)
-        chosen["resolution"] = resolution or chosen["resolution"]  # (this time live's size, as the picture's)
-        proc = self._holding(db, chosen, ffmpeg, player)
+        proc = self._holding_now(player, resolution)
         return proc is not None and buffer.refill(proc)
 
     def stop(self, forget: bool = True) -> dict:
@@ -403,6 +402,10 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
             shutil.rmtree(folder, ignore_errors=True)
         return self.status()
 
+    def _last_said(self) -> str | None:
+        """The last thing an ffmpeg said (the caller holds _lock), or None."""
+        return next((l for l in reversed(self._said) if l), None)
+
     def _current(self, gen: int, picture: int | None = None) -> bool:
         return self._wanted.is_set() and self._generation == gen and (picture is None or self._picture == picture)
 
@@ -413,6 +416,11 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
         while self._current(gen, picture) and (left := end - time.monotonic()) > 0:
             time.sleep(min(0.5, left))
         return self._current(gen, picture)
+
+
+def _saved_volume(player) -> None:
+    """The music back at the volume saved (a volume tried on the page let go)."""
+    player.settings(on=player.on, shuffle=player.shuffle, volume=settings(store())["music_volume"])
 
 
 stream = Stream()

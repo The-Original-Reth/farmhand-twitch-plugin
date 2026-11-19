@@ -47,6 +47,40 @@ def _quote(name: str) -> str:
     return urllib.parse.quote(name, safe="")
 
 
+def _media_names(raw, types: dict) -> list[str]:
+    """The files of these types named in a list of Farmhand's media (its blank screens, and names a file can't have,
+    left out)."""
+    out = []
+    for n in raw if isinstance(raw, list) else []:
+        if stream_media.is_blank(n):
+            continue
+        try:
+            n = stream_media._name(n, "file")
+        except (ValueError, TypeError):
+            continue
+        if Path(n).suffix.lower() in types:
+            out.append(n)
+    return out
+
+
+def _stamps_copied(root: Path) -> dict:
+    """Each file's stamp as last copied into `root` (STAMPS_FILE), or {} when there's none to read."""
+    try:
+        had = json.loads((root / STAMPS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return had if isinstance(had, dict) else {}
+
+
+def _not_copied(failed: list[tuple[str, str]]) -> str | None:
+    """What couldn't be copied, in a few words ((name, why) each), or None when everything was."""
+    if not failed:
+        return None
+    first = ", ".join(n for n, _ in failed[:2]) + (" …" if len(failed) > 2 else "")
+    what = "file" if len(failed) == 1 else "files"
+    return f"{len(failed)} of Stream control's {what} couldn't be copied from Farmhand ({first}): {failed[0][1]}"
+
+
 class Follower:
     def __init__(self):
         self._lock = threading.Lock()
@@ -261,28 +295,11 @@ class Follower:
         root = self._folder()
         client = farm.client(timeout=farm.QUICK)
         stamps = media.get("stamps") if isinstance(media.get("stamps"), dict) else {}
-        try:
-            had = json.loads((root / STAMPS_FILE).read_text(encoding="utf-8"))
-            had = had if isinstance(had, dict) else {}
-        except (OSError, ValueError):
-            had = {}
+        had = _stamps_copied(root)
         copied: dict[str, str] = {}  # each file's stamp as copied now (or kept)
         failed: list[tuple[str, str]] = []  # (name, why)
         changed = [False]  # (any file fetched or taken out)
         count = [0, 0]  # (done, of)
-
-        def names(raw, types: dict) -> list[str]:
-            out = []
-            for n in raw if isinstance(raw, list) else []:
-                if stream_media.is_blank(n):
-                    continue
-                try:
-                    n = stream_media._name(n, "file")
-                except (ValueError, TypeError):
-                    continue
-                if Path(n).suffix.lower() in types:
-                    out.append(n)
-            return out
 
         def fetch(path: str, rel: str, to: Path) -> None:
             try:
@@ -323,10 +340,10 @@ class Follower:
         try:
             for d in (stream_media.IMAGES, stream_media.SLIDESHOWS, stream_media.MUSIC):
                 (root / d).mkdir(parents=True, exist_ok=True)
-            images = names(media.get("images"), stream_media.PICTURE_TYPES)
-            tracks = names(media.get("music"), stream_media.TRACK_TYPES)
+            images = _media_names(media.get("images"), stream_media.PICTURE_TYPES)
+            tracks = _media_names(media.get("music"), stream_media.TRACK_TYPES)
             count[1] = len(images) + len(tracks) + sum(
-                len(names(show.get("images"), stream_media.PICTURE_TYPES)) for show in media.get("slideshows") or []
+                len(_media_names(show.get("images"), stream_media.PICTURE_TYPES)) for show in media.get("slideshows") or []
                 if isinstance(show, dict))
             for n in images:
                 fetch(f"/stream/pictures/{_quote(n)}", f"{stream_media.IMAGES}/{n}", root / stream_media.IMAGES / n)
@@ -341,7 +358,7 @@ class Follower:
                 shows.add(name)
                 d = root / stream_media.SLIDESHOWS / name
                 d.mkdir(exist_ok=True)
-                pictures = names(show.get("images"), stream_media.PICTURE_TYPES)
+                pictures = _media_names(show.get("images"), stream_media.PICTURE_TYPES)
                 for n in pictures:
                     fetch(f"/stream/slideshows/{_quote(name)}/pictures/{_quote(n)}", f"{stream_media.SLIDESHOWS}/{name}/{n}", d / n)
                 keep_only(d, set(pictures) | {stream_media.ORDER_FILE})
@@ -362,10 +379,6 @@ class Follower:
             storage.write_text_atomically(root / STAMPS_FILE, json.dumps(copied, ensure_ascii=False))
         except OSError as e:
             return f"Stream control's pictures and music couldn't be copied into the plugin's folder ({root}): {e.strerror or e}", changed[0]
-        if not failed:
-            return None, changed[0]
-        first = ", ".join(n for n, _ in failed[:2]) + (" …" if len(failed) > 2 else "")
-        what = "file" if len(failed) == 1 else "files"
-        return f"{len(failed)} of Stream control's {what} couldn't be copied from Farmhand ({first}): {failed[0][1]}", changed[0]
+        return _not_copied(failed), changed[0]
 
 follower = Follower()

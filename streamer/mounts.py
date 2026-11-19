@@ -55,7 +55,6 @@ class ShareSpec:
 
 # ------------------------------------------------------------------ validation
 
-_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$")
 _HOST = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 _DOMAIN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _SMB_BAD = re.compile(r'[\\:*?"<>|,\x00-\x1f]')

@@ -72,6 +72,11 @@ def _said(answer: dict) -> str:
     return str(answer.get("message") or answer.get("error") or "no reason given")
 
 
+def _as_channel(client_id: str, token: str) -> dict:
+    """The headers a Helix call made as the signed-in channel carries."""
+    return {"Client-Id": client_id, "Authorization": f"Bearer {token}"}
+
+
 # ------------------------------------------------------------------ the application and the sign-in, as kept
 
 
@@ -113,14 +118,18 @@ def _auth(db: Store) -> dict | None:
 def sign_out(db: Store) -> None:
     """Forget the sign-in (and tell Twitch the token is done with, best tried)."""
     a, cid = _auth(db), app(db)["client_id"]
-    db.put(AUTH_KEY, None)
-    db.commit()
+    _forget_auth(db)
     keeper.forget_title()
     if a and cid:
         try:
             _http("POST", f"{ID}/revoke", form={"client_id": cid, "token": a["access_token"]})
         except TwitchError:
             pass
+
+
+def _forget_auth(db: Store) -> None:
+    db.put(AUTH_KEY, None)
+    db.commit()
 
 
 def _token_form(db: Store, **extra) -> dict:
@@ -151,8 +160,7 @@ def _refresh(db: Store) -> dict:
         raise TwitchError("Sign in to Twitch again (Twitch settings).", signed_out=True)
     status, answer = _http("POST", f"{ID}/token", form=_token_form(db, grant_type="refresh_token", refresh_token=a["refresh_token"]))
     if status != 200 or not answer.get("access_token"):
-        db.put(AUTH_KEY, None)
-        db.commit()
+        _forget_auth(db)
         raise TwitchError(f"Twitch ended the sign-in ({_said(answer)}). Sign in to Twitch again (Twitch settings).", signed_out=True)
     return _kept_tokens(db, answer)
 
@@ -164,13 +172,13 @@ def _call(db: Store, method: str, path: str, body: dict | None = None) -> tuple[
         raise TwitchError("Sign in to Twitch first (Twitch settings).", signed_out=True)
     if float(a.get("expires_at") or 0) < time.time() + 300:
         a = _refresh(db)
-    for attempt in (1, 2):
-        status, answer = _http(method, f"{HELIX}{path}", body=body,
-                               headers={"Client-Id": app(db)["client_id"], "Authorization": f"Bearer {a['access_token']}"})
-        if status == 401 and attempt == 1:
-            a = _refresh(db)
-            continue
-        return status, answer
+
+    def ask(a: dict) -> tuple[int, dict]:
+        return _http(method, f"{HELIX}{path}", body=body, headers=_as_channel(app(db)["client_id"], a["access_token"]))
+
+    status, answer = ask(a)
+    if status == 401:  # (Twitch says the token is out: refreshed, and asked once more)
+        status, answer = ask(_refresh(db))
     return status, answer
 
 
@@ -261,7 +269,7 @@ class SignIn:
 
 
 def _whoami(token: str, client_id: str) -> dict:
-    status, answer = _http("GET", f"{HELIX}/users", headers={"Client-Id": client_id, "Authorization": f"Bearer {token}"})
+    status, answer = _http("GET", f"{HELIX}/users", headers=_as_channel(client_id, token))
     data = answer.get("data") if isinstance(answer, dict) else None
     if status != 200 or not data:
         raise TwitchError(f"Twitch didn't say whose channel this is ({_said(answer)}).")
