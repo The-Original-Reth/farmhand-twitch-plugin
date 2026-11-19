@@ -190,6 +190,7 @@ export function ControlledPanel({ control }) {
       {saved && !isNaN(saved) && (
         <div style={uiText(12, c.textMuted)}>Last saved there {saved.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.</div>
       )}
+      {control.copying && <div data-testid="stream-control-copying" style={uiText(12, c.textMuted, { lineHeight: 1.5 })}>{control.copying}</div>}
       {control.error && <div style={uiText(12, c.danger, { lineHeight: 1.5 })}>{control.error}</div>}
       <div style={help}>
         This page's own layout is kept as it was: the page comes back by itself when Stream control is switched off or
