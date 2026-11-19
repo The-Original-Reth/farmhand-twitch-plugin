@@ -110,7 +110,13 @@ export function MuteSwitch({ muted, onMute }) {
 // `off`: the switch at the top is off, so there's no going live until it's on. `channel`: the Twitch channel's name,
 // for the links to watch it, its chat, Stream Manager and Analytics (none until it's set in Twitch settings).
 export function LiveStatusPanel({ status, destLabel, destination, busy, onStart, onStop, off = false, channel = null }) {
-  const on = status.encoder === "nvenc" ? " · on the NVIDIA card" : status.encoder === "cpu" ? " · on the processor" : "";
+  // where the cameras are unpacked (cameraDecoding) and the stream compressed (encoder): the NVIDIA card or the processor
+  const cams = status.cameraDecoding;
+  const on = status.encoder === "nvenc"
+    ? cams === "cpu" ? " · compressed on the NVIDIA card, cameras on the processor" : cams === "gpu" ? " · cameras and compressing on the NVIDIA card" : " · on the NVIDIA card"
+    : status.encoder === "cpu"
+      ? cams === "gpu" ? " · cameras on the NVIDIA card, compressed on the processor" : " · on the processor"
+      : "";
   return (
     <div data-testid="stream-status" style={panelBox({ padding: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" })}>
       <Radio size={20} color={status.live ? (status.error ? c.amber : c.green) : c.textFaint} />
@@ -142,6 +148,11 @@ export function LiveStatusPanel({ status, destLabel, destination, busy, onStart,
                 <a href={url} target="_blank" rel="noreferrer" title={what} style={{ color: c.amber }}>{label}</a>
               </span>
             ))}
+          </div>
+        )}
+        {status.live && status.cameraDecodingNote && (
+          <div data-testid="stream-camera-decoding" style={uiText(12, c.textMuted, { marginTop: 6, lineHeight: 1.5 })}>
+            The cameras are read on the processor: {status.cameraDecodingNote}.
           </div>
         )}
         {status.live && status.selfCheck && (

@@ -144,11 +144,16 @@ farmhand-twitch .`), remove the compose file's `build:` line.
 
 ### An NVIDIA card
 
-As in the YouTube plugin: ffmpeg compresses the stream on an NVIDIA card (NVENC) when the container can reach it, and on
-the processor otherwise. The compose file has the `devices:` and library lines to uncomment, and the YouTube plugin's
-README (["An NVIDIA card"](https://github.com/The-Original-Reth/farmhand-youtube-plugin#an-nvidia-card)) has the driver
-set-up for a Proxmox container. Two plugins on one card each compress their own picture: consumer NVIDIA cards allow a
-handful of these at once, plenty for two.
+As in the YouTube plugin: ffmpeg compresses the stream on an NVIDIA card (NVENC) when the container can reach it, and
+unpacks and fits each camera's video on it too (NVDEC and CUDA's scaler), handing the cameras to the picture as raw
+frames, so the processor only lays out the grid; on the processor otherwise (the page says which while live, and why the
+cameras aren't on the card when it tried and couldn't). A camera the card can't unpack is read on the processor on its
+own. The compose file has the `devices:` and library lines to uncomment (`libnvidia-ptxjitcompiler.so.1` is what lets
+the cameras be fitted on the card), and the YouTube plugin's README
+(["An NVIDIA card"](https://github.com/The-Original-Reth/farmhand-youtube-plugin#an-nvidia-card)) has the driver set-up
+for a Proxmox container. `FARMHAND_STREAM_CAMERAS` (`auto` or `cpu`) says where the cameras are unpacked. Two plugins on
+one card each compress their own picture: a GeForce card with driver 550 or later allows 8 at once (each plugin uses
+one, two for a moment while a new layout takes over), and the cameras don't count against it.
 
 ## Add it to Farmhand
 
@@ -186,6 +191,7 @@ and Twitch is never sent anything. Watch it with `ffplay rtsp://192.168.10.215:8
 | `STREAM_CLIPS_SHOWN_AS` | Optional: the clips folder as people reach it over the network, shown on the page |
 | `STREAM_TEST_DESTINATION` | Optional: an `rtmp://` address the stream goes to instead of Twitch |
 | `FARMHAND_STREAM_ENCODER` | `auto` (default), `nvenc` or `cpu` |
+| `FARMHAND_STREAM_CAMERAS` | `auto` (default: unpacked and fitted on an NVIDIA card when it works) or `cpu` |
 
 ## Developing
 
