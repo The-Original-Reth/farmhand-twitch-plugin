@@ -32,7 +32,11 @@ sudo mkdir -p /opt/farmhand-twitch && cd /opt/farmhand-twitch
 sudo curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/The-Original-Reth/farmhand-twitch-plugin/main/docker-compose.yml
 ```
 
-It's ready as it is. Only for an **NVIDIA card**, edit it and uncomment the `devices:` and library lines:
+```bash
+sudo curl -fsSLo update.sh https://raw.githubusercontent.com/The-Original-Reth/farmhand-twitch-plugin/main/update.sh
+```
+
+It's ready as it is (`update.sh` is for updating it later: see "Updating"). Only for an **NVIDIA card**, edit it and uncomment the `devices:` and library lines:
 
 ```bash
 sudo nano /opt/farmhand-twitch/docker-compose.yml
@@ -100,10 +104,19 @@ category on Twitch (Creator Dashboard → Stream Manager → Edit Stream Info).
 ## Updating
 
 ```bash
-cd /opt/farmhand-twitch && sudo docker compose up -d --build
+cd /opt/farmhand-twitch && sudo sh update.sh
 ```
 
-The channel stays live: Twitch is shown the holding screen for about a minute while the delay fills again.
+`update.sh` builds the new version while the stream keeps going, then swaps the container, and goes on trying until
+the new one is up. If the old one can't be stopped at once (a process in it waiting on a NAS that's slow to answer),
+it waits and tries again rather than leaving the stream down. The channel stays live: Twitch is shown the holding
+screen for about a minute while the delay fills again.
+
+A machine set up before `update.sh` was there fetches it once, beside its compose file:
+
+```bash
+cd /opt/farmhand-twitch && sudo curl -fsSLo update.sh https://raw.githubusercontent.com/The-Original-Reth/farmhand-twitch-plugin/main/update.sh
+```
 
 ## If it won't connect to the NAS
 

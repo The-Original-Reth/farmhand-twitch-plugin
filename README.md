@@ -158,8 +158,12 @@ the farm's network that reaches Farmhand's API port (4545) and the cameras, the 
 ```bash
 sudo mkdir -p /opt/farmhand-twitch && cd /opt/farmhand-twitch
 sudo curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/The-Original-Reth/farmhand-twitch-plugin/main/docker-compose.yml
+sudo curl -fsSLo update.sh https://raw.githubusercontent.com/The-Original-Reth/farmhand-twitch-plugin/main/update.sh
 sudo docker compose up -d --build
 ```
+
+Update it later with `sudo sh update.sh` in that folder: it builds the new version while the stream keeps going, then
+swaps the container, trying again until the new one is up (INSTALL.md, "Updating").
 
 It answers at `http://<that machine>:8081`. Built from a copy of the repository instead (`docker build -t
 farmhand-twitch .`), remove the compose file's `build:` line.
