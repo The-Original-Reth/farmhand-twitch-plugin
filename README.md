@@ -23,6 +23,9 @@ Farmhand's colours.
 
 What it does:
 
+- **Text over a camera.** A camera's square can carry pieces of text (Add text in its square's editor, or in
+  Farmhand's Stream control), each dragged into place with its own size, font, colour and dark band. They're drawn
+  over the camera whenever it's on the stream, in the grid or on its own turn.
 - **Each camera is read on its own.** A camera that stops shows **Camera down** with the printer's name, and goes back
   to live video by itself; the other cameras and the connection to Twitch carry on.
 - **Cameras at different frame rates** all play at the stream's 15 a second; a slow camera just changes less often in
