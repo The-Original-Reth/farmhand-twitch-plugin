@@ -163,3 +163,75 @@ def test_the_title_isnt_taken_from_the_plugins_own_layout(api, twitch, plugin):
     """Not following Stream control (the real chosen()): nothing is set on Twitch."""
     signed_in(api, twitch)
     assert twitch_title.keeper.check(store.store()) is None and twitch.titles == []
+
+
+# ------------------------------------------------------------------ renewing the sign-in
+
+
+def _refreshes(twitch, monkeypatch, answer=None, slow=0.0):
+    """Twitch's refresh as a real one: a refresh token works once. `answer`: what Twitch says to a refresh instead
+    (status, json). Each refresh is counted in the list returned."""
+    import time
+
+    done, used = [], set()
+
+    def http(method, url, form=None, body=None, headers=None):
+        if url.endswith("/oauth2/token") and (form or {}).get("grant_type") == "refresh_token":
+            done.append(form["refresh_token"])
+            time.sleep(slow)
+            if answer is not None:
+                return answer
+            if form["refresh_token"] in used:
+                return 400, {"status": 400, "message": "Invalid refresh token"}
+            used.add(form["refresh_token"])
+        return twitch(method, url, form=form, body=body, headers=headers)
+
+    monkeypatch.setattr(twitch_title, "_http", http)
+    return done
+
+
+@pytest.mark.parametrize("answer", [(503, {"message": "Service Unavailable"}), (429, {"message": "Too Many Requests"}),
+                                    (500, {})])
+def test_twitch_busy_while_renewing_keeps_the_sign_in(api, twitch, monkeypatch, answer):
+    signed_in(api, twitch)
+    before = store.store().json(twitch_title.AUTH_KEY)
+    _refreshes(twitch, monkeypatch, answer=answer)
+    with pytest.raises(twitch_title.TwitchError) as e:
+        twitch_title._refresh(store.store())
+    assert not e.value.signed_out and "stays signed in" in e.value.message
+    assert store.store().json(twitch_title.AUTH_KEY) == before
+    assert api.get("/api/stream/twitch").json()["signed_in_as"] == "farmtest"
+
+
+def test_a_refresh_token_twitch_refuses_signs_out(api, twitch, monkeypatch):
+    signed_in(api, twitch)
+    _refreshes(twitch, monkeypatch, answer=(400, {"status": 400, "message": "Invalid refresh token"}))
+    with pytest.raises(twitch_title.TwitchError) as e:
+        twitch_title._refresh(store.store())
+    assert e.value.signed_out and api.get("/api/stream/twitch").json()["signed_in_as"] is None
+
+
+def test_two_refreshes_at_once_renew_the_sign_in_once(api, twitch, monkeypatch):
+    """The title's own round and Set title now both finding the token out of date: a refresh token works once, so
+    the second refresh used to be refused, and that signed the plugin out though the first had just worked."""
+    import threading
+
+    signed_in(api, twitch)
+    old = store.store().json(twitch_title.AUTH_KEY)["access_token"]
+    done = _refreshes(twitch, monkeypatch, slow=0.2)
+    got, errors = [], []
+
+    def renew():
+        try:
+            got.append(twitch_title._refresh(store.store(), old))
+        except twitch_title.TwitchError as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=renew) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(5)
+    assert errors == [] and len(done) == 1
+    assert got[0]["access_token"] == got[1]["access_token"] != old
+    assert api.get("/api/stream/twitch").json()["signed_in_as"] == "farmtest"

@@ -22,16 +22,20 @@ class SendingMixin:
         while self._current(gen):
             try:
                 proc = procs.popen(args, feed=True)
-            except OSError as e:
+            except OSError as e:  # (said on the page, and tried again: the stream stays live, or is stopped with Stop)
                 with self._lock:
-                    self._error = f"ffmpeg couldn't be started: {e.strerror or e}"
-                    self._wanted.clear()
-                return
-            with self._lock:
-                if not self._current(gen):
-                    procs.end(proc)
+                    self._error = (f"ffmpeg couldn't be started to connect to Twitch: {e.strerror or e}. "
+                                   f"Trying again in {RETRY_SECONDS} s.")
+                if not self._wait(gen, RETRY_SECONDS):
                     return
-                self._sender = proc
+                continue
+            with self._lock:
+                dropped = not self._current(gen)
+                if not dropped:
+                    self._sender = proc
+            if dropped:
+                procs.end(proc)  # (ended outside the lock: it may take a few seconds, and the page waits on the lock)
+                return
             buffer.set_sink(proc.stdin)
             started = time.monotonic()
             threading.Thread(target=self._clear_when_steady, args=(gen, proc), name="stream-sender-ok", daemon=True).start()

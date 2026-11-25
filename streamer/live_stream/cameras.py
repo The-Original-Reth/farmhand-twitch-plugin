@@ -17,11 +17,15 @@ FEEDERS_KEPT = 60  # seconds a camera no layout shows any more keeps its feeder 
 class CamerasMixin:
     """The cameras' feeders and words (state on runner.Stream)."""
 
-    def _feed(self, ffmpeg: str, srcs: list[Source], size: tuple[int, int], decoding: str | None = None) -> list[feeders.Feeder]:
+    def _feed(self, gen: int, ffmpeg: str, srcs: list[Source], size: tuple[int, int],
+              decoding: str | None = None) -> list[feeders.Feeder]:
         """Each camera's feeder, started if it hasn't one reading it the same way already (`decoding`: where the cameras
-        are unpacked, camera_decoding.decoding())."""
+        are unpacked, camera_decoding.decoding()). None once this time live (`gen`) is over: Stop ends the feeders, so
+        none is started after it."""
         out, old = [], []
         with self._lock:
+            if not self._current(gen):
+                return []
             for s in srcs:
                 f = self._feeders.get(s.key)
                 if f is None or not f.same(s.input_args, s.turn, size, decoding):

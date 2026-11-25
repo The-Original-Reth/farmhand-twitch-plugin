@@ -29,7 +29,7 @@ from .constants import DEFAULT_RESOLUTION, DESTINATIONS, KEPT_LINES, RESOLUTIONS
 from .choices import chosen as settings  # (what the stream sends: Stream control's design while it's followed)
 from .encoders import encoder
 from .camera_decoding import decoding
-from .buffer import Buffer
+from .buffer import NOT_TAKING, Buffer
 from .relay import Relay
 from .sources import sources
 from .picture import sender_command
@@ -46,6 +46,10 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
 
     def __init__(self):
         self._lock = threading.Lock()
+        # held while going live decides whether it starts a new time live and remembers it (LIVE_KEY), and while Stop
+        # forgets it: a Stop pressed while a Go live (or a new layout) was still asking Farmhand for the cameras wins
+        self._going = threading.RLock()
+        self._stops = 0  # one per Stop pressed: a Go live begun before the latest Stop does nothing
         self._encoder: str | None = None
         self._encoder_note: str | None = None  # why the stream is compressed on the processor after the card failed it
         self._decoding: tuple[str, str | None] | None = None  # where the cameras are unpacked, and why not the card
@@ -85,7 +89,10 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
         with self._lock:
             proc, sender, buffer = self._proc, self._sender, self._buffer
             wanted = self._wanted.is_set()
-            on_air = bool(proc is not None and proc.poll() is None and sender is not None and sender.poll() is None)
+            # (both ffmpegs running, and the sender taking what it's given: one whose connection to Twitch has silently
+            # stopped taking anything is running, but nothing reaches Twitch)
+            on_air = bool(proc is not None and proc.poll() is None and sender is not None and sender.poll() is None
+                          and (buffer is None or buffer.stuck() < NOT_TAKING))
             return {
                 "live": wanted,
                 "on_air": on_air and wanted,
@@ -173,6 +180,8 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
         """Go live with what's chosen now; while live already (to the same place), hand over to it with no break in what
         Twitch gets. `resumed`: going live again after the plugin's own restart (the holding screen goes out while the
         delay fills, so the channel never goes without video). ValueError says why it can't."""
+        with self._lock:
+            stops = self._stops  # (a Stop pressed from here on wins: see below)
         chosen = settings(db)
         if not chosen["enabled"]:
             raise ValueError("The stream is turned off: turn it on at the top of the Stream page first.")
@@ -187,26 +196,31 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
         ffmpeg = procs.ffmpeg_path()
         if not ffmpeg:
             raise ValueError("ffmpeg isn't installed in the Stream plugin's container, so it can't stream. Rebuild its image.")
-        known, note = farm.cameras(db)  # (Farmhand not answering: the addresses last heard of)
+        known, note = farm.cameras(db)  # (Farmhand not answering: the addresses last heard of; this can take a while)
         srcs = sources(db, chosen["cameras"], known)
         url = f"{test}/{key}" if test else where["url"] + key
-        with self._lock:
-            sender = self._sender
-            handover = self._wanted.is_set() and self._url == url and sender is not None and sender.poll() is None
-        if not handover:
-            self._start_session(db, session_factory, chosen, ffmpeg, url, key, resumed=resumed)
-        elif self._player:
-            self.music_settings(chosen)
-
-        db.put(LIVE_KEY, "1")  # (gone live: again by itself after a restart, until Stop)
-        db.commit()
+        with self._going:  # (Stop waits for this short part, so it always comes after it, and wins)
+            with self._lock:
+                stopped = self._stops != stops  # Stop was pressed meanwhile: it stays stopped, after a restart too
+                sender = self._sender
+                handover = self._wanted.is_set() and self._url == url and sender is not None and sender.poll() is None
+            if stopped:
+                return self.status()
+            if not handover:
+                self._start_session(db, session_factory, chosen, ffmpeg, url, key, resumed=resumed)
+            elif self._player:
+                self.music_settings(chosen)
+            with self._lock:
+                gen = self._generation  # (this time live: once stopped, nothing more is started for it below)
+            db.put(LIVE_KEY, "1")  # (gone live: again by itself after a restart, until Stop)
+            db.commit()
 
         # each camera's feeder: the ones already reading it carry on (a new layout never connects to a camera again)
         with self._lock:
             resolution, cache = self._resolution, self._cache  # (this time live's, whatever is saved now)
         size = RESOLUTIONS.get(resolution or DEFAULT_RESOLUTION, RESOLUTIONS[DEFAULT_RESOLUTION])[:2]
         cams = decoding(ffmpeg)
-        fed = self._feed(ffmpeg, srcs, size, cams[0])
+        fed = self._feed(gen, ffmpeg, srcs, size, cams[0])
         feeders.wait_for_shapes(fed, feeders.SHAPE_WAIT)  # (raw cameras: their pipes made for the size they come at)
         enc = encoder(ffmpeg)
         # (each picture is compressed the way the stream is then: the card may be left for the processor, or back)
@@ -214,20 +228,24 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
                                                      resolution, cache)
 
         with self._lock:
-            gen = self._generation
-            self._picture += 1
-            picture = self._picture
-            self._encoder = enc
-            if enc == "nvenc":
-                self._encoder_note = None
-            self._decoding = cams
-            self._labels = [s.label for s in srcs]
-            self._showing = [(s.key, s.label) for s in srcs]
-            self._farmhand_note = note
-            self._error = None
-            warming, self._warming = self._warming, None
-            if handover:
-                self._changing = True
+            stopped = not self._current(gen)
+            if not stopped:
+                self._picture += 1
+                picture = self._picture
+                self._encoder = enc
+                if enc == "nvenc":
+                    self._encoder_note = None
+                self._decoding = cams
+                self._labels = [s.label for s in srcs]
+                self._showing = [(s.key, s.label) for s in srcs]
+                self._farmhand_note = note
+                self._error = None
+                warming, self._warming = self._warming, None
+                if handover:
+                    self._changing = True
+        if stopped:  # Stop was pressed while this layout was put together: nothing of it is started
+            shutil.rmtree(folder, ignore_errors=True)
+            return self.status()
         procs.end(warming)  # a newer layout came while one was still warming up: that one is dropped at once
         threading.Thread(target=self._keep_picture, args=(gen, picture, make, folder, handover, {s.key for s in srcs}), name="stream", daemon=True).start()
         if files:
@@ -263,6 +281,7 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
 
         # the music starts with the stream (when it's on and there are tracks; silence otherwise)
         player = music.Player(ffmpeg, tracks, on=chosen["music"], shuffle=chosen["music_shuffle"], volume=chosen["music_volume"])
+        clips.recent.clear()  # (a clip is of this time live only: never the end of the one before)
         buffer = Buffer(chosen["delay"], sent=clips.recent.add)  # (what goes to Twitch, kept for clips)
         with self._lock:
             self._generation += 1
@@ -361,10 +380,18 @@ class Stream(CamerasMixin, PicturesMixin, SendingMixin, SelfCheckMixin):
     def stop(self, forget: bool = True) -> dict:
         """Stop the stream. `forget`: Stop pressed (it won't go live again after a restart); False when the plugin is
         only shutting down, or going live afresh."""
-        if forget:
+        if not forget:
+            return self._end()
+        with self._going:  # (after any Go live deciding now, and before the next: see go_live)
+            with self._lock:
+                self._stops += 1
             s = store()
             s.put(LIVE_KEY, None)
             s.commit()
+            return self._end()
+
+    def _end(self) -> dict:
+        """Everything of this time live ended (the stream's state as stop() answers it)."""
         with self._lock:
             self._wanted.clear()
             self._generation += 1

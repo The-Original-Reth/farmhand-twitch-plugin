@@ -35,11 +35,13 @@ SAVE_TIMEOUT = 120  # seconds ffmpeg may take to copy a clip into an MP4 (five m
 NAME = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}-[0-9]{2}-[0-9]{2}( [0-9]+)?( [^/\\]{1,80}?)? \([0-9]+ s\)\.mp4$")
 KEYFRAME_EVERY = 2  # seconds: how often a go2rtc camera (and the stream) sends a whole picture
 STREAM = "stream"  # the source that is what goes to Twitch (the others: cameras, "printer id:camera name")
+STILL_SENDING = 2  # seconds since the last piece sent within which the stream counts as still going out (for a clip's length)
 UNSAFE = re.compile(r'[/\\:*?"<>|\x00-\x1f]+')  # (left out of a camera's name in a clip's name)
 
 
 class Recent:
-    """What Twitch has been sent lately: (when it went out, MPEG-TS) pieces, the last MOST_SECONDS + EXTRA."""
+    """What Twitch has been sent lately: (when it went out, MPEG-TS) pieces, the last MOST_SECONDS + EXTRA. Older
+    pieces go as time passes, whether or not anything more is sent (after Stop, say)."""
 
     def __init__(self, keep: float = MOST_SECONDS + EXTRA, clock=time.monotonic):
         self.keep = keep
@@ -53,29 +55,39 @@ class Recent:
         now = self._clock()
         with self._lock:
             self._pieces.append((now, bytes(data)))
-            while self._pieces and now - self._pieces[0][0] > self.keep:
-                self._pieces.popleft()
+            self._age(now)
+
+    def _age(self, now: float) -> None:
+        """Pieces older than `keep` let go. (Called holding the lock.)"""
+        while self._pieces and now - self._pieces[0][0] > self.keep:
+            self._pieces.popleft()
 
     def held(self) -> float:
-        """Seconds of what went to Twitch kept now (0 before anything has)."""
+        """Seconds of what went to Twitch kept now (0 before anything has, or once all of it is too old)."""
+        now = self._clock()
         with self._lock:
-            return round(self._clock() - self._pieces[0][0], 1) if self._pieces else 0.0
+            self._age(now)
+            return round(now - self._pieces[0][0], 1) if self._pieces else 0.0
 
     def last(self, seconds: float) -> tuple[bytes, float]:
         """The last `seconds` sent, from the whole frame at or just before then (the one after it when there's none
-        before: the start of what's kept), and how many seconds that is. (b"", 0) when there's nothing."""
+        before: the start of what's kept), and how many seconds of stream that is. (b"", 0) when nothing went to Twitch
+        in those seconds (nothing yet, or the stream was stopped before them): never a clip of something older."""
         now = self._clock()
         with self._lock:
+            self._age(now)
             pieces = list(self._pieces)
-        if not pieces:
-            return b"", 0.0
         cut = now - seconds
-        first = next((i for i, (sent, _) in enumerate(pieces) if sent >= cut), len(pieces) - 1)
+        first = next((i for i, (sent, _) in enumerate(pieces) if sent >= cut), None)
+        if first is None:
+            return b"", 0.0
+        # (how much stream: up to now while it's going out; up to the last piece sent once it has stopped)
+        end = now if now - pieces[-1][0] < STILL_SENDING else pieces[-1][0]
         for i in [*range(first, -1, -1), *range(first + 1, len(pieces))]:  # a whole frame at or before the cut, else after
             at = keyframe_at(pieces[i][1])
             if at is not None:
                 data = pieces[i][1][at:] + b"".join(p for _, p in pieces[i + 1:])
-                return data, round(now - pieces[i][0], 1)
+                return data, round(end - pieces[i][0], 1)
         return b"", 0.0
 
     def clear(self) -> None:
@@ -146,9 +158,13 @@ def save(ffmpeg: str, folder: Path, seconds: int, tz: str | None = None, run=Non
         raise ValueError(problem)
     data, got = recent.last(clamp(seconds))
     if not data:
-        raise ValueError("Nothing has gone to Twitch yet: a clip is taken from what the stream has sent.")
+        raise ValueError(f"Nothing has gone to Twitch in the last {clamp(seconds)} s: a clip is taken from what the "
+                         "stream has sent while it's live.")
     when = datetime.now(_zone(tz))
-    name = _free_name(folder, f"{when:%Y-%m-%d %H-%M-%S}", round(got))
+    try:
+        name = _free_name(folder, f"{when:%Y-%m-%d %H-%M-%S}", round(got))  # (its part file made: the name is this clip's)
+    except OSError as e:
+        raise ValueError(f"The clip couldn't be written in the clips folder ({e.strerror or e}).") from None
     final, part = folder / name, folder / f".{name}.part"
     with tempfile.NamedTemporaryFile(suffix=".ts", delete=False) as ts:
         ts.write(data)
@@ -182,12 +198,20 @@ def _zone(tz: str | None):
 
 def _free_name(folder: Path, stamp: str, seconds: int, label: str | None = None) -> str:
     """"<date> <time> (<n> s).mp4" (a camera's: "<date> <time> <camera> (<n> s).mp4"), with a number added when one
-    taken the same second is there already."""
+    taken the same second is there already, or being written. The name is taken at once: its part file
+    (".<name>.part") is made here, only when no other clip has made it, so two clips taken in the same second never
+    share a name or a part file. The caller writes the part file, and removes it when done. OSError when the folder
+    can't be written."""
     what = f" {UNSAFE.sub('-', label).strip(' .-')[:80]}" if label else ""
     name, n = f"{stamp}{what} ({seconds} s).mp4", 2
-    while (folder / name).exists():
+    while True:
+        if not (folder / name).exists():
+            try:
+                with open(folder / f".{name}.part", "x"):
+                    return name
+            except FileExistsError:
+                pass  # (another clip is being written under that name)
         name, n = f"{stamp} {n}{what} ({seconds} s).mp4", n + 1
-    return name
 
 
 # ------------------------------------------------------------------ clips from a camera: the next N seconds
@@ -285,9 +309,10 @@ def record_camera(ffmpeg: str, folder: Path, key: str, label: str, cam: dict, se
     when = datetime.now(_zone(tz))
 
     def go() -> None:
-        name = _free_name(folder, f"{when:%Y-%m-%d %H-%M-%S}", seconds, label)
-        part = folder / f".{name}.part"
+        part = None
         try:
+            name = _free_name(folder, f"{when:%Y-%m-%d %H-%M-%S}", seconds, label)
+            part = folder / f".{name}.part"
             done = run(camera_command(ffmpeg, cam, seconds, str(part)), capture_output=True, timeout=seconds + SAVE_TIMEOUT)
             if done.returncode != 0 or not part.exists() or part.stat().st_size == 0:
                 said = (done.stderr or b"").decode("utf-8", "replace").strip().splitlines()
@@ -302,7 +327,8 @@ def record_camera(ffmpeg: str, folder: Path, key: str, label: str, cam: dict, se
             recordings.end(key, False, f"{label}'s clip couldn't be written ({e.strerror or e}).")
         finally:
             try:
-                part.unlink()
+                if part is not None:
+                    part.unlink()
             except OSError:
                 pass
 
