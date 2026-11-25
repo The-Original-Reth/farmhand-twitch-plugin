@@ -132,7 +132,7 @@ def test_a_clip_that_cant_be_saved_says_why(tmp_path, kept, monkeypatch):
         clips.save("ffmpeg", tmp_path, 30, run=fails)
     assert list(tmp_path.iterdir()) == []  # (nothing half-made left)
     kept.clear()
-    with pytest.raises(ValueError, match="Nothing has gone to Twitch yet"):
+    with pytest.raises(ValueError, match="Nothing has gone to Twitch in the last 30 s"):
         clips.save("ffmpeg", tmp_path, 30, run=_ffmpeg_makes_an_mp4([]))
 
 
@@ -290,3 +290,81 @@ def test_the_clip_list_follows_cameras_added_and_removed_in_farmhand(api, plugin
     del farmhand.cameras[3]
     camera_watch.refresh()
     assert "3:Front" not in keys()  # taken off Farmhand
+
+
+# ------------------------------------------------------------------ after Stop, and two at once
+
+
+def test_nothing_older_than_the_clip_is_taken_after_stop():
+    """An hour after Stop, a 30 s clip used to save the last seconds before Stop, named "(3600 s)"."""
+    clock = Clock()
+    recent = clips.Recent(clock=clock)
+    for s in range(60):
+        _second(clock, recent, key=s % 2 == 0)
+    clock.now += 10  # stopped 10 s ago: what's in the last 30 s is the 20 s before Stop
+    data, seconds = recent.last(30)
+    assert data.startswith(KEY) and 19 <= seconds <= 21
+    clock.now += 3600  # an hour later: nothing went to Twitch in the last 30 s
+    assert recent.last(30) == (b"", 0.0) and recent.held() == 0
+
+
+def test_a_clip_after_stop_says_nothing_went_to_twitch(tmp_path, kept):
+    kept._clock.now += 3600
+    with pytest.raises(ValueError, match="Nothing has gone to Twitch in the last 30 s"):
+        clips.save("ffmpeg", tmp_path, 30, run=_ffmpeg_makes_an_mp4([]))
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_two_clips_taken_in_the_same_second_get_their_own_names(tmp_path, kept, monkeypatch):
+    import threading
+    import time
+    from datetime import datetime as real_datetime
+
+    class Frozen(real_datetime):  # (both taken in the very same second)
+        @classmethod
+        def now(cls, tz=None):
+            return real_datetime(2026, 11, 25, 12, 0, 0, tzinfo=tz)
+
+    monkeypatch.setattr(clips, "datetime", Frozen)
+    makes = _ffmpeg_makes_an_mp4([])
+
+    def slow(args, **kw):  # (ffmpeg takes a moment: the other clip is taken meanwhile)
+        time.sleep(0.3)
+        return makes(args, **kw)
+
+    got, errors = [], []
+
+    def take():
+        try:
+            got.append(clips.save("ffmpeg", tmp_path, 10, run=slow))
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=take) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(5)
+    assert errors == [] and len(got) == 2
+    names = {g["name"] for g in got}
+    assert len(names) == 2 and sorted(p.name for p in tmp_path.iterdir()) == sorted(names)  # (both whole, no .part left)
+
+
+def test_a_name_is_taken_as_soon_as_its_given(tmp_path):
+    first = clips._free_name(tmp_path, "2026-11-25 12-00-00", 10)
+    second = clips._free_name(tmp_path, "2026-11-25 12-00-00", 10)
+    assert first == "2026-11-25 12-00-00 (10 s).mp4" and second == "2026-11-25 12-00-00 2 (10 s).mp4"
+
+
+def test_going_live_afresh_starts_clips_from_nothing(api, ffmpeg, farmhand, plugin):
+    from streamer.live_stream import stream
+
+    from .conftest import grid
+
+    clips.recent.add(KEY + b"OLD TIME LIVE")
+    grid(api, [{"camera": "1:Bed"}, None])
+    try:
+        assert api.post("/api/stream/start").status_code == 200
+        assert all(b"OLD TIME LIVE" not in p for _, p in list(clips.recent._pieces))
+    finally:
+        stream.stop()

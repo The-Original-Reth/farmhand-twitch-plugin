@@ -26,10 +26,30 @@ ENOUGH = 0.5
 TOP_UP_SHORT = 10
 TOP_UP_AFTER = 60
 TOP_UP_EVERY = 600
+# What Twitch actually gets, not just what the picture makes: a sender that hasn't taken the piece it was given for
+# SENDER_STALL seconds (its connection silently stopped taking anything, though ffmpeg is still running) is ended, and
+# connected again by its own loop. (ffmpeg gives up by itself sooner, after picture.SENDER_IO_TIMEOUT; this is in case not.)
+SENDER_STALL = 30
 
 
 class SelfCheckMixin:
     """The self-check (state on runner.Stream)."""
+
+    def _check_sender(self, gen: int) -> bool:
+        """The sender ended when it has stopped taking what it's given for SENDER_STALL seconds (see there): True when
+        it was."""
+        with self._lock:
+            if not self._current(gen):
+                return False
+            buffer, sender = self._buffer, self._sender
+            stuck = buffer.stuck() if buffer is not None else 0.0
+            if sender is None or sender.poll() is not None or stuck < SENDER_STALL:
+                return False
+            self._healed = {"at": datetime.now(timezone.utc).isoformat(),
+                            "message": f"Twitch took nothing from the stream for {stuck:.0f} seconds, so the connection to "
+                                       "Twitch was started again."}
+        procs.end(sender)  # (started again by its own loop)
+        return True
 
     def _watch_flow(self, gen: int, relay: Relay) -> None:
         """The self-check, for as long as this time live lasts (see CHECK_EVERY): a stream left running day and night
@@ -41,6 +61,7 @@ class SelfCheckMixin:
         topped_up: float | None = None  # when it was last topped up
         while self._wait(gen, CHECK_EVERY):
             now = time.monotonic()
+            self._check_sender(gen)
             short = self._delay_short(gen)
             if short is None or short < TOP_UP_SHORT:
                 short_since = None

@@ -85,10 +85,12 @@ class PicturesMixin:
         if handover and old is not None and old.poll() is None:
             procs.nice(proc, WARMING_NICE)
             with self._lock:
-                if not self._current(gen, picture):
-                    procs.end(proc)
-                    return None
-                self._warming = proc
+                dropped = not self._current(gen, picture)
+                if not dropped:
+                    self._warming = proc
+            if dropped:
+                procs.end(proc)  # (ended outside the lock: it may take a few seconds, and the page waits on the lock)
+                return None
             took = relay.switch_to(proc, HANDOVER_WAIT)
             with self._lock:
                 if self._warming is proc:
@@ -100,17 +102,29 @@ class PicturesMixin:
         else:
             relay.start(proc)
         with self._lock:
-            if not self._current(gen, picture):
-                procs.end(proc)
-                return None
-            old, self._proc = self._proc, proc
-            if folder:
-                self._dir = folder
-            self._run_started = time.monotonic()
-            self._error = None
-            self._changing = False
+            dropped = not self._current(gen, picture)
+            if not dropped:
+                old, self._proc = self._proc, proc
+                old_dir = self._dir
+                if folder:
+                    self._dir = folder
+                self._run_started = time.monotonic()
+                self._error = None
+                self._changing = False
+        if dropped:
+            procs.end(proc)
+            return None
         if old is not None and old is not proc:
             procs.end(old)  # the one it took over from
+        if folder and old_dir and old_dir != folder:
+            # the old layout's folder (its words, pictures and camera pipes): its picture is ended, so nothing reads it
+            # any more (its pump is stopped now rather than once it notices). Its own thread left the folder, as it was
+            # still going out when that thread was handed over from.
+            with self._lock:
+                old_pump = self._pumps.get(old)
+            if old_pump is not None:
+                old_pump.stop()
+            shutil.rmtree(old_dir, ignore_errors=True)
         return proc
 
     def _keep_picture(self, gen: int, picture: int, make, folder: str, handover: bool, keys: set[str]) -> None:
@@ -127,10 +141,12 @@ class PicturesMixin:
                 if proc is None:
                     try:
                         proc = self._start_picture(gen, picture, make, handover, folder)
-                    except OSError as e:
+                    except OSError as e:  # (said on the page, and tried again: the stream never stays live with no picture)
                         with self._lock:
-                            self._error = f"ffmpeg couldn't be started: {e.strerror or e}"
-                        return
+                            self._error = f"ffmpeg couldn't be started: {e.strerror or e}. Trying again in {RETRY_SECONDS} s."
+                        if not self._wait(gen, RETRY_SECONDS, picture):
+                            return
+                        continue
                     if proc is None:  # it couldn't start beside the one going out (unless a newer layout came)
                         if not self._current(gen, picture):
                             return

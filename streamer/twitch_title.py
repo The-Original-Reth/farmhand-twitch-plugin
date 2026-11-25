@@ -34,6 +34,12 @@ CHECK_EVERY = 10  # seconds between looks at Stream control's title
 VALIDATE_EVERY = 3600  # seconds between checks of the sign-in with Twitch
 TIMEOUT = 10
 CLIENT_ID = re.compile(r"^[A-Za-z0-9]{10,60}$")
+# Twitch's answers to a refresh that mean the sign-in is over (an invalid or used-up refresh token, an application that
+# isn't right any more): only these sign the plugin out. Anything else (Twitch busy, 5xx, 429) keeps it, tried again later.
+SIGNED_OUT = (400, 401)
+# One refresh at a time: a refresh token is used up by its refresh, so a second refresh at once (the title's own round,
+# and Set title now) would be refused, and that refusal signed the plugin out though the first had just worked
+_refreshing = threading.Lock()
 
 
 class TwitchError(Exception):
@@ -117,8 +123,9 @@ def _auth(db: Store) -> dict | None:
 
 def sign_out(db: Store) -> None:
     """Forget the sign-in (and tell Twitch the token is done with, best tried)."""
-    a, cid = _auth(db), app(db)["client_id"]
-    _forget_auth(db)
+    with _refreshing:  # (never undone by a refresh under way)
+        a, cid = _auth(db), app(db)["client_id"]
+        _forget_auth(db)
     keeper.forget_title()
     if a and cid:
         try:
@@ -154,15 +161,25 @@ def _kept_tokens(db: Store, answer: dict, who: dict | None = None) -> dict:
     return a
 
 
-def _refresh(db: Store) -> dict:
-    a = _auth(db)
-    if not a or not a.get("refresh_token"):
-        raise TwitchError("Sign in to Twitch again (Twitch settings).", signed_out=True)
-    status, answer = _http("POST", f"{ID}/token", form=_token_form(db, grant_type="refresh_token", refresh_token=a["refresh_token"]))
-    if status != 200 or not answer.get("access_token"):
-        _forget_auth(db)
-        raise TwitchError(f"Twitch ended the sign-in ({_said(answer)}). Sign in to Twitch again (Twitch settings).", signed_out=True)
-    return _kept_tokens(db, answer)
+def _refresh(db: Store, used: str | None = None) -> dict:
+    """The sign-in renewed with its refresh token (one refresh at a time): the tokens as now kept. `used`: the access
+    token the caller found out of date; when another refresh has replaced it meanwhile, that one's tokens are used
+    rather than refreshing again. Signed out only when Twitch says the sign-in is over (SIGNED_OUT); a refresh Twitch
+    couldn't answer now (busy, down, too many asks) keeps the sign-in, and is tried again next time."""
+    with _refreshing:
+        a = _auth(db)
+        if not a or not a.get("refresh_token"):
+            raise TwitchError("Sign in to Twitch again (Twitch settings).", signed_out=True)
+        if used is not None and a["access_token"] != used and float(a.get("expires_at") or 0) >= time.time() + 300:
+            return a  # (renewed by another meanwhile)
+        status, answer = _http("POST", f"{ID}/token", form=_token_form(db, grant_type="refresh_token", refresh_token=a["refresh_token"]))
+        if status == 200 and answer.get("access_token"):
+            return _kept_tokens(db, answer)
+        if status in SIGNED_OUT:
+            _forget_auth(db)
+            raise TwitchError(f"Twitch ended the sign-in ({_said(answer)}). Sign in to Twitch again (Twitch settings).", signed_out=True)
+        raise TwitchError(f"Twitch couldn't renew the sign-in just now ({_said(answer)}). The plugin stays signed in "
+                          "and tries again shortly.")
 
 
 def _call(db: Store, method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
@@ -171,14 +188,14 @@ def _call(db: Store, method: str, path: str, body: dict | None = None) -> tuple[
     if not a:
         raise TwitchError("Sign in to Twitch first (Twitch settings).", signed_out=True)
     if float(a.get("expires_at") or 0) < time.time() + 300:
-        a = _refresh(db)
+        a = _refresh(db, a["access_token"])
 
     def ask(a: dict) -> tuple[int, dict]:
         return _http(method, f"{HELIX}{path}", body=body, headers=_as_channel(app(db)["client_id"], a["access_token"]))
 
     status, answer = ask(a)
     if status == 401:  # (Twitch says the token is out: refreshed, and asked once more)
-        status, answer = ask(_refresh(db))
+        status, answer = ask(_refresh(db, a["access_token"]))
     return status, answer
 
 
@@ -365,7 +382,7 @@ class TitleKeeper:
         a = _auth(db)
         status, answer = _http("GET", f"{ID}/validate", headers={"Authorization": f"OAuth {a['access_token']}"})
         if status == 401:
-            _refresh(db)
+            _refresh(db, a["access_token"])
         elif status != 200:
             raise TwitchError(f"Twitch couldn't check the sign-in ({_said(answer)}).")
         self._validated = time.time()

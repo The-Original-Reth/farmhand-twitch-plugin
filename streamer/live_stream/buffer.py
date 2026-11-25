@@ -15,6 +15,9 @@ TRIM_OVER = 5  # seconds over the delay the buffer may hold before it's trimmed 
 FILL_MOST = 30  # seconds past the delay, by the clock, after which the sender is started though less is held
 JUMP = 5  # seconds: a step in the stream's times over this (back or forward) is a hand-over, not stream (Buffer)
 PTS_WRAP = (1 << 33) / 90000  # seconds after which an MPEG-TS time starts again from 0 (about 26.5 hours)
+# seconds the sender may leave a piece untaken before the stream no longer counts as on air (it reads at real time, so a
+# piece normally goes in well under a second; one that won't go in means its connection to Twitch has stopped taking it)
+NOT_TAKING = 10
 
 
 class Buffer:
@@ -39,6 +42,7 @@ class Buffer:
         self._ended = False
         self._filler = None  # while filling: what the sender is given meanwhile (the holding screen's ffmpeg), or None
         self.sent = sent  # told each piece the sender has taken (what Twitch is given: kept for clips, clips.py), or None
+        self._offered: float | None = None  # (monotonic) since when the sender has been given a piece it hasn't taken yet
         threading.Thread(target=self._feed, name="stream-buffer", daemon=True).start()
 
     def fill_from(self, proc) -> None:
@@ -154,6 +158,13 @@ class Buffer:
             self._cond.notify_all()
         _stop(filler)
 
+    def stuck(self) -> float:
+        """How many seconds the sender has been given a piece without taking it (0 while it takes what it's given, or
+        has nothing to take): what Twitch is actually getting, not what the picture makes. A connection to Twitch that
+        silently stopped taking anything shows here, while the picture (and the delay's buffer) carry on as before."""
+        with self._cond:
+            return 0.0 if self._offered is None else round(time.monotonic() - self._offered, 1)
+
     def held(self) -> float:
         """
         How many seconds of stream are held now: how far behind the picture Twitch gets is (0 before the first). By the
@@ -229,14 +240,19 @@ class Buffer:
     def _send(self, sink, data: bytes) -> bool:
         """`data` to the sender (blocking while the sender, reading at real time, has its pipe full). False when it has
         ended (it's started again, with set_sink)."""
+        with self._cond:
+            self._offered = time.monotonic()
         try:
             sink.write(data)
             sink.flush()
         except (OSError, ValueError):
             with self._cond:
+                self._offered = None
                 if self._sink is sink:
                     self._sink = None
             return False
+        with self._cond:
+            self._offered = None
         if self.sent is not None:
             self.sent(data)
         return True

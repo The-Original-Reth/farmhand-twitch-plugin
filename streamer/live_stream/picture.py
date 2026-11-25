@@ -178,13 +178,19 @@ def command(ffmpeg: str, srcs: list[Source], url: str, look: Look | None = None)
     return args
 
 
+SENDER_IO_TIMEOUT = 15  # seconds the connection to Twitch may take nothing before the sender gives up (and is started again)
+
+
 def sender_command(ffmpeg: str, url: str) -> list[str]:
     """The sender: the stream as the relay passes it on (MPEG-TS on stdin), played out at real time (-re: the delay's
-    buffer is taken from the front at the pace it plays) and sent to `url` as it is (-c copy: no work of its own)."""
+    buffer is taken from the front at the pace it plays) and sent to `url` as it is (-c copy: no work of its own). A
+    connection that silently stops taking anything (the network gone, no word from Twitch) ends it after
+    SENDER_IO_TIMEOUT seconds (-rw_timeout), so it's started again rather than hanging for a quarter of an hour."""
     # (-dts_delta_threshold 0.2: a jump of over a fifth of a second in the times, where a picture ffmpeg stalled or was started
     # again, is taken as a break and closed up, so the buffer plays straight on instead of waiting out the jump)
     return [ffmpeg, "-hide_banner", "-loglevel", "warning", "-re", "-dts_delta_threshold", "0.2", "-f", "mpegts", "-i", "pipe:0",
-            "-map", "0", "-c", "copy", "-bsf:a", "aac_adtstoasc", "-f", "flv", url]
+            "-map", "0", "-c", "copy", "-bsf:a", "aac_adtstoasc", "-rw_timeout", str(SENDER_IO_TIMEOUT * 1_000_000),
+            "-f", "flv", url]
 
 
 def _stream_words(look: Look) -> dict:
